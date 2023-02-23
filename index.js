@@ -3,9 +3,9 @@
 /// <reference path="./table.js" />
 
 
-const toggleClass = (e, className)=>{
+const toggleClass = (e, className) => {
   const after = !e.classList.contains(className);
-  put(e, `${after?'.':'!'}${className}`);
+  put(e, `${after ? '.' : '!'}${className}`);
   return after;
 }
 
@@ -14,21 +14,82 @@ const theTable = (() => {
   const listMeaning = [];
   const listHanzi = [];
   const listPinyin = [];
-  const addClickToggle = (td, list)=>{
-    td.onclick = ()=>{
+  const addClickToggle = (td, list) => {
+    td.onclick = () => {
       let isOff = true;
-      for(let e of list) isOff = isOff && e.classList.contains('off');
+      for (let e of list) isOff = isOff && e.classList.contains('off');
       const setOff = !isOff;
-      for(let e of list) put(e, setOff?'.off':'!off');
+      for (let e of list) put(e, setOff ? '.off' : '!off');
     }
     return td;
-  }  
+  }
+  const grades = [-1, 1, 2, 3, 4, 5, 6];
+
+  const hanziSet = {};
+  for (let d of THE_KANJI_JSON) {
+    hanziSet[d.hanzi] = true;
+  }
+  const trAll = THE_KANJI_JSON.map(d => {
+    let fold = true;
+    const button = put(`button.center $`, '+');
+    const tdPinyin = put('td.right $', `.${d.pinyin}.`);
+    const tdHanzi = put('td.center $', d.hanzi);
+    const tdMeaning = put('td.left $', d.meaning);
+    listMeaning.push(tdMeaning);
+    listHanzi.push(tdHanzi);
+    listPinyin.push(tdPinyin);
+
+    const tr = put(`tr#${d.hanzi}`, [put('td', button), tdPinyin, tdHanzi, tdMeaning])
+    const urlOf = (s) => `https://en.wiktionary.org/wiki/${encodeURIComponent(s)}`;
+    const addLinks = (text) => {
+      const out = [];
+      let i = 0, j = 0;
+      while (j <= text.length) {
+        if (j < text.length && hanziSet[text[j]]) {
+          out.push(text.slice(i, j));
+          out.push(put('a[href=$] $', `#${text[j]}`, text[j]));
+          i = j + 1;
+        } else if (j == text.length) {
+          out.push(text.slice(i, j));
+          i = j;
+        }
+        j++;
+      }
+      return out;
+    }
+    const trDetailed = put('tr.hidden', put('td.left[colspan=4]', put('ul',
+      put('li $', `#${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
+      put('li', put('a[href=$] $', urlOf(d.pinyin), `Homophones of ${d.pinyin}`)),
+      put('li', put('a[href=$] $', urlOf(d.hanzi), `Definition of ${d.hanzi}`)),
+      put('li', putNodes`Origin: ${addLinks(d.etymology || '')}`),
+    )));
+    button.onclick = () => {
+      fold = !fold;
+      put(trDetailed, fold ? '.hidden' : '!hidden');
+      button.innerText = fold ? '+' : '-';
+    }
+    tdMeaning.onclick = () => toggleClass(tdMeaning, 'off');
+    tdHanzi.onclick = () => toggleClass(tdHanzi, 'off');
+    tdPinyin.onclick = () => toggleClass(tdPinyin, 'off');
+    put(tr, '[grade=$]', d.grade);
+    put(trDetailed, '[grade=$]', d.grade);
+    return [tr, trDetailed];
+  }).flat();
 
   const table = put(`table#${newUID(20, (uid) => `
-  #${uid} td {
+  #${uid} {
+    margin: auto;
+  }
+  #${uid} td.center,
+  #${uid} th.center {
     text-align: center;
   }
-  #${uid} td.details {
+  #${uid} td.right,
+  #${uid} th.right {
+    text-align: right;
+  }
+  #${uid} td.left,
+  #${uid} th.left {
     text-align: left;
   }
   #${uid} td.off {
@@ -39,6 +100,9 @@ const theTable = (() => {
     margin-right: 0.5em;
   }
   #${uid} .hidden{
+    display:none;
+  }
+  #${uid} .hiddenByGrade{
     display:none;
   }
   #${uid} .origin{
@@ -54,41 +118,46 @@ const theTable = (() => {
     put('thead', put('tr', [
       //put('th $', ''),
       put('th $', ''),
-      addClickToggle(put('th $', 'Pinyin'), listPinyin),
-      addClickToggle(put('th $', 'Hanzi'), listHanzi),
-      addClickToggle(put('th $', 'Meaning'), listMeaning),
+      addClickToggle(put('th.right $', 'Pinyin'), listPinyin),
+      addClickToggle(put('th.center $', 'Hanzi'), listHanzi),
+      addClickToggle(put('th.left $', 'Meaning'), listMeaning),
     ])),
-    put('tbody', THE_KANJI_JSON.map(d => {
-      let fold = true;
-      const button = put(`button $`, '+');
-      const tdPinyin = put('td $', `.${d.pinyin}.`);
-      const tdHanzi = put('td $', d.hanzi);
-      const tdMeaning = put('td $', d.meaning);
-      listMeaning.push(tdMeaning);
-      listHanzi.push(tdHanzi);
-      listPinyin.push(tdPinyin);
-
-      const tr = put('tr', [put('td', button), tdPinyin, tdHanzi, tdMeaning])
-      const urlOf = (s) => `https://en.wiktionary.org/wiki/${encodeURIComponent(s)}`;
-      const trDetailed = put('tr.hidden', put('td.details[colspan=4]', put('ul',
-        put('li $', `#${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
-        put('li', put('a[href=$] $', urlOf(d.pinyin), `Homophones of ${d.pinyin}`)),
-        put('li', put('a[href=$] $', urlOf(d.hanzi), `Definition of ${d.hanzi}`)),
-        put('li $', `Origin: ${d.etymology}`),
-      )));
-      button.onclick = () => {
-        fold = !fold;
-        put(trDetailed, fold ? '.hidden' : '!hidden');
-        button.innerText = fold ? '+' : '-';
-      }
-      tdMeaning.onclick = ()=>toggleClass(tdMeaning, 'off');
-      tdHanzi.onclick = ()=>toggleClass(tdHanzi, 'off');
-      tdPinyin.onclick = ()=>toggleClass(tdPinyin, 'off');
-      return [tr, trDetailed];
-    }).flat()),
+    put('tbody', trAll),
   ]);
 
-  return table;
+  document.body.appendChild(put('style $', `
+  button.control.active {
+    font-weight: bold;
+  }
+  `));
+  const buttons = grades.map(lvl => {
+    const button = put('button.control $', lvl < 0 ? 'All' : lvl);
+    if (lvl < 0) put(button, '.active');
+    button.onclick = () => {
+      const tgt = trAll.map(e => [e, lvl < 0 || e.getAttribute('grade') == '' + lvl]);
+      for (let [e, show] of tgt) put(e, show ? '!hiddenByGrade' : '.hiddenByGrade');
+      for (let b of buttons) {
+        put(b, b === button ? '.active' : '!.active');
+      }
+    }
+    return button;
+  });
+
+  let fontSize = 1.1;
+  let fontStyle = put('style $', `html { font-size: ${fontSize}em }`);
+  const fontButtons = ['-', '+'].map(s => {
+    const button = put('button $', s);
+    button.onclick = () => {
+      fontSize = fontSize * ((s == '+') ? 1.05 : 0.95);
+      fontStyle.innerText = `html { font-size: ${fontSize}em }`;
+    }
+    return button;
+  });
+  const more = put('ul', [
+    put('li $', 'Grade: ', buttons),
+    put('li $', 'Font size: ', fontButtons),
+  ])
+  return [fontStyle, more, put('br'), table];
 })();
 
 const mainElement = putNodes`

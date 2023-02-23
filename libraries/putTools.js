@@ -2,8 +2,7 @@
 
 //@ts-check
 /// <reference path="./put.js" />
-/// <reference path="./katex.js" />
-/// <reference path="./codemirror-5.55.0/lib/codemirror.js" />
+
 
 /** @typedef {string|number|boolean|object} RenderConstant0 */
 /** @typedef {RenderConstant0|RX<RenderConstant0>} RenderConstant1 */
@@ -141,37 +140,6 @@ function putText(text$){
   if(text$ instanceof RX) text$.subscribe(text => elem.textContent=parseText(text));
   else elem.textContent=parseText(text$);
   return elem;
-}
-
-
-
-
-document.head.append(put('style', `
-.CodeMirror{
-  height: 100%;
-}
-`));
-function putCodemirror(code, options){
-  const id = 'codemirror-'+(''+Math.random()).slice(2);
-  document.head.append(put('style', `
-  #${id} .CodeMirror{height: 100%;}
-  `));
-  const codeDiv = put(`div#${id}`);
-  until(() => document.querySelector(`#${id}`)).then(() => {
-    options = Object.assign({
-      unindent: true,
-      keyMap: 'sublime',
-      theme: 'default',
-      indentUnit: 2,
-      tabSize: 2,
-      lineWrapping: true,
-      lineNumbers: true,
-      scrollPastEnd: false,
-      autoRefresh: true,
-    }, options);
-    CodeMirror(codeDiv, {value: code, ...options});
-  });
-  return codeDiv;
 }
 
 
@@ -407,27 +375,3 @@ function RadioGroup(entries, choice$=null){
   })
   return put('div.radio-group', zEntries.map(({container})=>container));
 }
-
-
-
-
-
-(()=>{
-  var katexMacros = {
-    ...Object.fromEntries([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.matchAll(/./g)].map(C=>   [`bb${C}`, `{\\mathbb ${C}}`] )), ...Object.fromEntries([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.matchAll(/./g)].map(C=>   [`cal${C}`, `{\\mathcal ${C}}`] )), T: '\\intercal', eqdef: `\\@ifstar{\\eqdef@B}{\\eqdef@A}`, 'eqdef@A': `\\stackrel{{\\scriptscriptstyle \\mathrm{def}}}{\\coloneqq}`, 'eqdef@B': `\\coloneqq`, defeq: `\\@ifstar{\\defeq@B}{\\defeq@A}`, 'defeq@A': `\\stackrel{{\\scriptscriptstyle \\mathrm{def}}}{\\eqqcolon}`, 'defeq@B': `\\eqqcolon`, abs: `\\@ifstar{\\abs@B}{\\abs@A}`, 'abs@A': `{|#1|}`, 'abs@B': `{\\left|#1\\right|}`, norm: `\\@ifstar{\\norm@B}{\\norm@A}`, 'norm@A': `{\\Vert#1\\Vert}`, 'norm@B': `{\\left\\lVert\\{#1\\right\\rVert}`, 'given': `\\given@A`, 'given@A': `{\\mkern1.5mu\\mid\\mkern2mu}`, 'given@B': `\\middle|`, 'useGiven@A': `{\\def\\given{\\given@A}#1}`, 'useGiven@B': `{\\def\\given{\\given@B}#1}`, '@equals': `=`, '@equals@A': `{\\mkern0mu=\\mkern1mu}`, '@equals@B': `{\\mkern0.5mu=\\mkern1.5mu}`, 'useEquals@A': `{\\def\\@equals{\\@equals@A}#1}`, 'useEquals@B': `{\\def\\@equals{\\@equals@B}#1}`, 'style@A': `\\useEquals@A{#1}`, 'style@B': `\\useEquals@B{\\useGiven@B{#1}}`, set: `\\@ifstar{\\set@B}{\\set@A}`, 'set@A': `\\style@A{\\{#1\\}}`, 'set@B': `\\style@B{\\left\\{#1\\right\\}}`, lr: `\\@ifstar{\\lr@B}{\\lr@A}`, 'lr@A': `\\style@A{(#1)}`, 'lr@B': `\\style@B{\\left(#1\\right)}`, LR: `\\@ifstar{\\LR@B}{\\LR@A}`, 'LR@A': `\\style@A{[#1]}`, 'LR@B': `\\style@B{\\left[#1\\right]}`, 'Prob': `\\bbP\\lr`, 'ProbSub': `\\operatorname*{\\bbP}_{#1}\\lr`, 'Expe': `\\bbE\\LR`, 'ExpeSub': `\\operatorname*{\\bbE}_{#1}\\LR`,
-  }
-
-  let sq = {join: '\\sqcup', meet: '\\sqcap', sqleq: '\\sqsubseteq', sqgeq: '\\sqsupseteq', sqlt: '\\sqsubset', sqgt: '\\sqsupset'};
-  sq = {
-    ...sq,
-    ...Object.fromEntries(Object.entries(sq).map(([key,value])=>(
-      [`${key}E`,`${value}_{\\calE}`]
-    ))),
-    ...Object.fromEntries(Object.entries(sq).map(([key,value])=>(
-      [`${key}F`,`${value}_{\\calF}`]
-    ))),
-  };
-  for(let [key, value] of Object.entries({...katexMacros, ...sq})){
-    katex.__defineMacro(`\\${key}`, value);
-  }
-})();
