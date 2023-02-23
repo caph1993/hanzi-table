@@ -3,6 +3,12 @@
 /// <reference path="./table.js" />
 
 
+function newUID(length, styleTemplate) {
+  const uid = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(length * 2)))).replace(/[+/]/g, "").substring(0, length);
+  if (styleTemplate) document.head.append(put('style', styleTemplate(uid)))
+  return uid;
+}
+
 const toggleClass = (e, className) => {
   const after = !e.classList.contains(className);
   put(e, `${after ? '.' : '!'}${className}`);
@@ -58,7 +64,7 @@ const theTable = (() => {
       return out;
     }
     const trDetailed = put('tr.hidden', put('td.left[colspan=4]', put('ul',
-      put('li $', `#${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
+      put('li $', `Character ${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
       put('li', put('a[href=$] $', urlOf(d.pinyin), `Homophones of ${d.pinyin}`)),
       put('li', put('a[href=$] $', urlOf(d.hanzi), `Definition of ${d.hanzi}`)),
       put('li', putNodes`Origin: ${addLinks(d.etymology || '')}`),
@@ -76,7 +82,7 @@ const theTable = (() => {
     return [tr, trDetailed];
   }).flat();
 
-  const table = put(`table#${newUID(20, (uid) => `
+  const tableId = newUID(20, (uid) => `
   #${uid} {
     margin: auto;
   }
@@ -114,7 +120,8 @@ const theTable = (() => {
     overflow: hidden;
     white-space: nowrap;
   }
-  `)}`, [
+  `);
+  const table = put(`table#${tableId}`, [
     put('thead', put('tr', [
       //put('th $', ''),
       put('th $', ''),
@@ -125,13 +132,17 @@ const theTable = (() => {
     put('tbody', trAll),
   ]);
 
-  document.body.appendChild(put('style $', `
-  button.control.active {
+  document.head.appendChild(put('style $', `
+  button.controls.active {
+    text-decoration: underline;
     font-weight: bold;
+  }
+  button.controls {
+    margin-right: 0.1em;
   }
   `));
   const buttons = grades.map(lvl => {
-    const button = put('button.control $', lvl < 0 ? 'All' : lvl);
+    const button = put('button.controls $', lvl < 0 ? 'All' : lvl);
     if (lvl < 0) put(button, '.active');
     button.onclick = () => {
       const tgt = trAll.map(e => [e, lvl < 0 || e.getAttribute('grade') == '' + lvl]);
@@ -143,13 +154,13 @@ const theTable = (() => {
     return button;
   });
 
-  let fontSize = 1.1;
-  let fontStyle = put('style $', `html { font-size: ${fontSize}em }`);
+  let fontSize = 1.4;
+  let fontStyle = put('style $', `#${tableId} { font-size: ${fontSize}em }`);
   const fontButtons = ['-', '+'].map(s => {
-    const button = put('button $', s);
+    const button = put('button.controls $', s);
     button.onclick = () => {
       fontSize = fontSize * ((s == '+') ? 1.05 : 0.95);
-      fontStyle.innerText = `html { font-size: ${fontSize}em }`;
+      fontStyle.innerText = `#${tableId} { font-size: ${fontSize}em }`;
     }
     return button;
   });
@@ -173,12 +184,6 @@ ${theTable}
 
 Carlos Pinzón
 `;
-
-function newUID(length, styleTemplate) {
-  const uid = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(length * 2)))).replace(/[+/]/g, "").substring(0, length);
-  if (styleTemplate) document.body.append(put('style', styleTemplate(uid)))
-  return uid;
-}
 
 document.body.append(
   put(`div.${newUID(20, (uid) => `
