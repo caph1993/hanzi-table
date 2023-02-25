@@ -1,13 +1,24 @@
 //@ts-check
-/// <reference path="./libraries/putTools.js" />
-/// <reference path="./table.js" />
-
+/// <reference path="./libraries/cpTools.js" />
+var put = cp.put;
 
 const toggleClass = (e, className) => {
   const after = !e.classList.contains(className);
   put(e, `${after ? '.' : '!'}${className}`);
   return after;
 }
+
+
+cp.dom.style(`
+body {
+  background: no-repeat url(./libraries/paper-transparent.png) 0 0;
+  background-color: white;
+  background-repeat: repeat;
+  margin: 0;
+}
+button{cursor: pointer;}
+html{font-family: Latin Modern Roman;}
+`)
 
 const theTable = (async () => {
 
@@ -30,7 +41,7 @@ const theTable = (async () => {
   );
   const hanziSet = new Set(hanziBasic);
 
-  const details = cp.sleep(5000)
+  const details = cp.sleep(800)
   .then(()=>cp.scripts.load('./hanzi-details.js')
   .then(table=>{
     const dict = {};
@@ -45,7 +56,7 @@ const theTable = (async () => {
     const button = put(`button.center[disabled] $`, '+');
     const tdPinyin = put('td.right $', `.${d.pinyin}.`);
     const tdHanzi = put('td.center $', d.hanzi);
-    const tdMeaning = put('td.left[style=$] $','max-width:33vw', d.meaning);
+    const tdMeaning = put('td.left[style=$] $','max-width:40vw', d.meaning);
     const tr = put(
       `tr#${d.hanzi}`,
       [put('td', button), tdPinyin, tdHanzi, tdMeaning],
@@ -64,10 +75,11 @@ const theTable = (async () => {
     tdHanzi.onclick = () => toggleClass(tdHanzi, 'off');
     tdPinyin.onclick = () => toggleClass(tdPinyin, 'off');
     details.then(det=>{
+      const {grade} = det[d.hanzi];
       put(button, '[!disabled]');
       put(tdDetails, makeDetails({...d, ...det[d.hanzi]}));
-      put(tr, '[grade=$]', d.grade);
-      put(tdDetails, '[grade=$]', d.grade);
+      put(tr, '[grade=$]', grade);
+      put(trDetails, '[grade=$]', grade);
     })
     return [tr, trDetails];
   }).flat();
@@ -97,11 +109,11 @@ const theTable = (async () => {
       put('li $', `Character ${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
       put('li', put('a[href=$] $', wiktionary(d.pinyin), `Homophones of ${d.pinyin}`)),
       put('li', put('a[href=$] $', wiktionary(d.hanzi), `Definition of ${d.hanzi}`)),
-      put('li', putNodes`Origin: ${addLinks(d.etymology || '')}`),
+      put('li', cp.html`Origin: ${addLinks(d.etymology || '')}`),
     );
   }
 
-  const tableId = cp.insert.styleId(uid => `
+  const tableId = cp.dom.styleId(uid => `
   #${uid} {
     margin: auto;
   }
@@ -166,7 +178,9 @@ const theTable = (async () => {
     if (lvl < 0) put(button, '.active');
     button.onclick = () => {
       const tgt = trAll.map(e => [e, lvl < 0 || e.getAttribute('grade') == '' + lvl]);
-      for (let [e, show] of tgt) put(e, show ? '!hiddenByGrade' : '.hiddenByGrade');
+      for (let [e, show] of tgt){
+        put(e, show ? '!hiddenByGrade' : '.hiddenByGrade');
+      }
       for (let b of buttons) {
         put(b, b === button ? '.active' : '!.active');
       }
@@ -191,7 +205,7 @@ const theTable = (async () => {
   return [fontStyle, more, put('br'), put('div[style=$]', 'width:100%', table)];
 })();
 
-const mainElement = putNodes`
+const mainElement = cp.html`
 ${put('h1 $', 'Chinese Hanzi table')}
 
 The following table contains the 1006 most popular Chinese characters according to Japanese government.
@@ -206,13 +220,13 @@ Carlos Pinzón
 `;
 
 document.body.append(
-  put(`div.${cp.insert.styleId((uid) => `
+  put(`div.${cp.dom.styleId((uid) => `
     .${uid}{
       padding-top: 1em;
       padding-bottom: calc(20vh + 5rem);
     }
     `)}`,
-    put(`div.${cp.insert.styleId((uid) => `
+    put(`div.${cp.dom.styleId((uid) => `
       .${uid}{
         padding: 1% 2% 3% 2%; max-width: 45em; margin: auto;
       }

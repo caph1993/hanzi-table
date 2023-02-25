@@ -3,12 +3,315 @@
 
 
 const cp = (() => {
+  const put = (()=>{
+    let forDocument, fragmentFasterHeuristic = /[-+,> ]/;
+    let selectorParse = /(?:\s*([-+ ,<>]))?\s*(\.|!\.?|#)?([-\w\u00A0-\uFFFF%$|]+)?(?:\[([^\]=]+)=?('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|[^\]]*)\])?/g,
+      undefined, namespaceIndex, namespaces = /**@type {*}*/(false),
+      doc = document,
+      ieCreateElement = typeof doc.createElement == "object"; // telltale sign of the old IE behavior with createElement that does not support later addition of name 
+    function insertTextNode(element, text) {
+      element.appendChild(doc.createTextNode(text));
+    }
+    /** @type {(...args)=>HTMLElement}*/
+    function put(topReferenceElement) {
+      let fragment, lastSelectorArg, nextSibling, referenceElement, current,
+        args = arguments,
+        returnValue = args[0]; // use the first argument as the default return value in case only an element is passed in
+      function insertLastElement() {
+        // we perform insertBefore actions after the element is fully created to work properly with 
+        // <input> tags in older versions of IE that require type attributes
+        //	to be set before it is attached to a parent.
+        // We also handle top level as a document fragment actions in a complex creation 
+        // are done on a detached DOM which is much faster
+        // Also if there is a parse error, we generally error out before doing any DOM operations (more atomic) 
+        if (current && referenceElement && current != referenceElement) {
+          (referenceElement == topReferenceElement &&
+            // top level, may use fragment for faster access 
+            (fragment ||
+              // fragment doesn't exist yet, check to see if we really want to create it 
+              (fragment = fragmentFasterHeuristic.test(argument) && doc.createDocumentFragment()))
+            // any of the above fails just use the referenceElement  
+            ? fragment : referenceElement).
+            insertBefore(current, nextSibling || null); // do the actual insertion
+        }
+      }
+      for (let i = 0; i < args.length; i++) {
+        var argument = args[i];
+        if (typeof argument == "object") {
+          lastSelectorArg = false;
+          if (argument instanceof Array) {
+            // an array
+            current = doc.createDocumentFragment();
+            for (let key = 0; key < argument.length; key++) {
+              current.appendChild(put(argument[key]));
+            }
+            argument = current;
+          }
+          if (argument.nodeType) {
+            current = argument;
+            insertLastElement();
+            referenceElement = argument;
+            nextSibling = 0;
+          } else {
+            // an object hash
+            for (let key in argument) {
+              current[key] = argument[key];
+            }
+          }
+        } else if (lastSelectorArg) {
+          // a text node should be created
+          // take a scalar value, use createTextNode so it is properly escaped
+          // createTextNode is generally several times faster than doing an escaped innerHTML insertion: http://jsperf.com/createtextnode-vs-innerhtml/2
+          lastSelectorArg = false;
+          insertTextNode(current, argument);
+        } else {
+          if (i < 1) {
+            // if we are starting with a selector, there is no top element
+            topReferenceElement = null;
+          }
+          lastSelectorArg = true;
+          let leftoverCharacters = argument.replace(selectorParse, function (t, combinator, prefix, value, attrName, attrValue) {
+            if (combinator) {
+              // insert the last current object
+              insertLastElement();
+              if (combinator == '-' || combinator == '+') {
+                // + or - combinator, 
+                // TODO: add support for >- as a means of indicating before the first child?
+                referenceElement = (nextSibling = (current || referenceElement)).parentNode;
+                current = null;
+                if (combinator == "+") {
+                  nextSibling = nextSibling.nextSibling;
+                }// else a - operator, again not in CSS, but obvious in it's meaning (create next element before the current/referenceElement)
+              } else {
+                if (combinator == "<") {
+                  // parent combinator (not really in CSS, but theorized, and obvious in it's meaning)
+                  referenceElement = current = (current || referenceElement).parentNode;
+                } else {
+                  if (combinator == ",") {
+                    // comma combinator, start a new selector
+                    referenceElement = topReferenceElement;
+                  } else if (current) {
+                    // else descendent or child selector (doesn't matter, treated the same),
+                    referenceElement = current;
+                  }
+                  current = null;
+                }
+                nextSibling = 0;
+              }
+              if (current) {
+                referenceElement = current;
+              }
+            }
+            let tag = !prefix && value;
+            if (tag || (!current && (prefix || attrName))) {
+              if (tag == "$") {
+                // this is a variable to be replaced with a text node
+                insertTextNode(referenceElement, args[++i]);
+              } else {
+                // Need to create an element
+                tag = tag || put.defaultTag;
+                let ieInputName = ieCreateElement && args[i + 1] && args[i + 1].name;
+                if (ieInputName) {
+                  // in IE, we have to use the crazy non-standard createElement to create input's that have a name 
+                  tag = '<' + tag + ' name="' + ieInputName + '">';
+                }
+                // we swtich between creation methods based on namespace usage
+                current = namespaces && ~(namespaceIndex = tag.indexOf('|')) ?
+                  doc.createElementNS(namespaces[tag.slice(0, namespaceIndex)], tag.slice(namespaceIndex + 1)) :
+                  doc.createElement(tag);
+              }
+            }
+            if (prefix) {
+              if (value == "$") value = args[++i];
+              if (prefix == "#") current.id = value;
+              else {
+                let currentClassName = current.className;
+                let removed = currentClassName && (" " + currentClassName + " ").replace(" " + value + " ", " ");
+                if (prefix == ".") {
+                  current.className = currentClassName ? (removed + value).substring(1) : value;
+                } else {
+                  // else a '!' class removal
+                  if (argument == "!") {
+                    let parentNode;
+                    // special signal to delete this element
+                    if (ieCreateElement) {
+                      // use the ol' innerHTML trick to get IE to do some cleanup
+                      put("div", current, '<').innerHTML = "";
+                    } else if (parentNode = current.parentNode) { // intentional assigment
+                      // use a faster, and more correct (for namespaced elements) removal (http://jsperf.com/removechild-innerhtml)
+                      parentNode.removeChild(current);
+                    }
+                  } else {
+                    // we already have removed the class, just need to trim
+                    removed = removed.substring(1, removed.length - 1);
+                    // only assign if it changed, this can save a lot of time
+                    if (removed != currentClassName) {
+                      current.className = removed;
+                    }
+                  }
+                }
+                // CSS class removal
+              }
+            }
+            if (attrName) {
+              if (attrValue && (attrValue.charAt(0) === '"' || attrValue.charAt(0) === "'")) {
+                // quoted string
+                attrValue = attrValue.slice(1, -1).replace(/\\/g, '')
+              }
+              if (attrValue == "$") {
+                attrValue = args[++i];
+              }
+              // [name=value]
+              if (attrName == "style") {
+                // handle the special case of setAttribute not working in old IE
+                current.style.cssText = attrValue;
+              } else {
+                let method = attrName.charAt(0) == "!" ? (attrName = attrName.substring(1)) && 'removeAttribute' : 'setAttribute';
+                // determine if we need to use a namespace
+                namespaces && ~(namespaceIndex = attrName.indexOf('|')) ?
+                  current[method + "NS"](namespaces[attrName.slice(0, namespaceIndex)], attrName.slice(namespaceIndex + 1), attrValue) :
+                  current[method](attrName, attrValue);
+              }
+            }
+            return '';
+          });
+          if (leftoverCharacters) {
+            throw new SyntaxError("Unexpected char " + leftoverCharacters + " in " + argument);
+          }
+          insertLastElement();
+          referenceElement = returnValue = current || referenceElement;
+        }
+      }
+      if (topReferenceElement && fragment) {
+        // we now insert the top level elements for the fragment if it exists
+        topReferenceElement.appendChild(fragment);
+      }
+      return returnValue;
+    }
+    put.addNamespace = function (name, uri) {
+      // @ts-ignore
+      if (doc.createElementNS) {
+        (namespaces || (namespaces = {}))[name] = uri;
+      }
+      // @ts-ignore for old IE
+      else doc.namespaces.add(name, uri);
+    };
+    put.defaultTag = "div";
+    put.forDocument = forDocument;
+    return put;
+  })();
+
+  const head = document.querySelector('#cpToolsHead') || put(document.head, 'div#cpToolsHead');
 
   const sleep = async (/** @type {number} */ ms) => (
     await new Promise(resolve => setTimeout(resolve, ms))
   );
 
-  const head = document.querySelector('#cpToolsHead') || put(document.head, 'div#cpToolsHead');
+  const html = (()=>{
+    const parsers = {
+      katex: [/(\$\$.*?\$\$|\$.*?\$)/gs, async m=>{
+        const displayMode = m.startsWith("$$");
+        const skip = displayMode?2:1;
+        const formula = m.slice(skip, -skip);
+        const e = put('div');
+        const katex = await cp.load('katex');
+        katex.render(formula, e, {throwOnError: false, displayMode});
+        return e.firstChild;
+      }],
+      code: [/\\\`\\\`\\\`(.*?)\\\`\\\`\\\`/gs, async m=>{
+        const code = m.slice(6,-6).trim().replace(/^.*?\n(.*)$/gs, '$1');
+        const options = {mode:'text/javascript'};
+        const putCodemirror = await cp.load('putCodemirror');
+        return putCodemirror(code, options);
+      }],
+      codeInline: [/\\\`(.*?)\\\`/g, m=>html`<code>${m[1]}</code>`]
+    }
+
+    /** @typedef {string|number|boolean|Node|{[key:string]:any}} _T0 */
+    /** @typedef {_T0|Promise<_T0>} _T1 */
+    /** @typedef {_T1|_T1[]} _T2 */
+    /** 
+     * @param {TemplateStringsArray} htmlTemplateString
+     * @param {_T2[]} variables
+     * @returns {Node[]}
+     * */
+    function parse(htmlTemplateString, ...variables){
+      let wrapper = document.createElement('div');
+      let /** @type {readonly string[]}*/ htmlSeq = (htmlTemplateString.raw||htmlTemplateString);
+      let varKey = 'placeholderForPutVariable';
+      let html = htmlSeq.join(`<div ${varKey}></div>`)
+      // Comments shift placeholder replacements
+      html = html.replace(/<!--.*?-->/gs, '');
+      const values = {};
+      const valuesIdx = {};
+      for(let key of Object.keys(parsers)){
+        const [reg, elemFactory] = parsers[key];
+        values[key] = [];
+        valuesIdx[key] = 0;
+        html = html.replace(reg, m=>{
+          values[key].push(elemFactory(m));
+          return `<div ${varKey}="${key}"></div>`
+        });
+      }
+      html = html.replace(/\s*\n(\s*\n)+/g, '<div class="parBreak"></div>');
+      wrapper.innerHTML = html;
+      values[''] = variables;
+      valuesIdx[''] = 0;
+      let replacements = [];
+      const dfs = (/** @type {Node}*/root)=>{
+        for(let child of root.childNodes){
+          const isPlaceholder = (
+            child.nodeName=="DIV"
+            && child instanceof HTMLElement
+            && child.attributes[varKey]
+          );
+          if(!isPlaceholder) dfs(child);
+          else{
+            const key = isPlaceholder.value;
+            const value = values[key][valuesIdx[key]++];
+            replacements.push({element:child, value});
+          }
+        }
+      }
+      dfs(wrapper);
+
+      for(let {element, value} of replacements){
+        let values = (Array.isArray(value)? value:[value]).map(v=>{
+          if(v instanceof Promise){
+            const tmpDiv = document.createElement('div');
+            v.then(value=>tmpDiv.replaceWith(...parse`${value}`));
+            return tmpDiv;
+          }
+          if(v instanceof Node) return v;
+          return putText(v);
+        });
+        element.replaceWith(.../**@type {*}*/(values));
+      }
+      // DOES NOT WORK for td nor th!!!
+      return [...wrapper.childNodes];
+    }
+
+    /** 
+     * @param {_T1} text$
+     * @returns {Text}
+     * */
+    function putText(text$){
+      const parseText = (v)=>{
+        if (typeof v === 'string') return v;
+        if(v instanceof String) return v.toString();
+        if(Number.isFinite(v)) return `${v}`;
+        if(!v) '';
+        return JSON.stringify(v);
+      }
+      const elem = document.createTextNode('');
+      if(text$ instanceof events.EventTrigger){
+        text$.listen(async text => elem.textContent=parseText(text));
+      } else elem.textContent=parseText(text$);
+      return elem;
+    }
+    return parse;
+  })();
+
 
   /** @template T
    @param {number?} timeout
@@ -18,21 +321,8 @@ const cp = (() => {
     new Promise((resolve, reject) => {
       f(resolve, reject);
       if (timeout) setTimeout(() => reject('timeout'), timeout);
-    }
-    ));
-
-  const random = (() => {
-    /** random string of letters only */
-    const letters = (/** @type {number} */ length) => {
-      let out = String.fromCharCode(...crypto.getRandomValues(new Uint8Array(length * 2)));
-      // Forbid numbers because style ids can not start with number
-      out = btoa(out).replace(/[+/]|\d/g, "");
-      if (out.length < length) out += letters(length);
-      return out.substring(0, length);
-    }
-    const random = { letters, }
-    return random;
-  })();
+    })
+  );
 
   async function untilTimed(/** @type {()=>any}*/ func, { ms = 200, timeout = 0 } = {}) {
     if (timeout && ms > timeout) ms = timeout / 10;
@@ -86,16 +376,6 @@ const cp = (() => {
           }
           this.addEventListener('', onLoad);
         });
-        // return new Promise((resolve, reject) => {
-        //   const onLoad = () => {
-        //     const out = callable();
-        //     if (!out) return;
-        //     resolve(out);
-        //     this.removeEventListener('', onLoad);
-        //   }
-        //   this.addEventListener('', onLoad);
-        //   if (timeout) setTimeout(() => reject('timeout'), timeout);
-        // });
       }
     }
     const events = { EventTrigger };
@@ -106,7 +386,40 @@ const cp = (() => {
     const getUrl = (/** @type {string}*/path) => {
       return new URL(path, document.baseURI).href;
     }
-    const utils = { getUrl, sleep };
+    /** https://github.com/Microsoft/TypeScript/issues/23405#issuecomment-873331031 */
+    /** @template T  @param {T} value @param {string} [valueName] @returns {T extends undefined ? never : T} */
+    function assertDef(value, valueName) {
+      if (value === undefined) {
+        throw new Error(`Encountered unexpected undefined value${valueName? ` for '${valueName}'` : ""}`);
+      }
+      return /** @type {*} */ (value);
+    }
+    /** @template T @param {T} value @returns {T extends null ? never : T} */
+    function assertNonNull(value) {
+      if (!value && (value===null||value === undefined)) throw new Error(`Encountered unexpected undefined value`);
+      return /** @type {*} */ (value);
+    }
+    /** @template T @param {T} value @returns {T extends null ? never : T} */
+    function nonNull(value) { return /** @type {*} */ (value); }
+    /** @type {(n: number) => number[]} */
+    function range(n) {
+      return [...Array(n).fill(0)].map((x,i)=>i);
+    }
+    /** @type {(obj: any) => obj is String} */
+    function isString(obj) {
+      return Object.prototype.toString.call(obj) === "[object String]";
+    }
+    function rand32(){
+      return Math.floor(Math.random()*(1<<32))
+    }
+    /** random string of letters only */
+    const randAZ = (/** @type {number} */ length) => {
+      const rand = crypto.getRandomValues(new Uint8Array(length * 2));
+      let out = btoa(String.fromCharCode(...rand)).replace(/[+/]|\d/g, "");
+      if (out.length < length) out += randAZ(length);
+      return out.substring(0, length);
+    }
+    const utils = { getUrl, sleep, assertDef, assertNonNull, nonNull, range, isString, rand32, randAZ };
     return utils;
   })();
 
@@ -156,7 +469,7 @@ const cp = (() => {
   })();
   // style injector:
 
-  const insert = (() => {
+  const dom = (() => {
     /** @typedef {(id: string) => string} StyleTemplate */
     /**
      * @type {{
@@ -175,7 +488,7 @@ const cp = (() => {
       } else if(typeof first === 'number'){
         length = first, styleTemplate = second;
       }
-      let uid = id || random.letters(length);
+      let uid = id || utils.randAZ(length);
       if (styleTemplate) cp.head.append(put('style', styleTemplate(uid)))
       return uid;
     }
@@ -188,115 +501,19 @@ const cp = (() => {
       _styles[url] = true;
       put(head, 'link[href=$][rel=stylesheet]', url);
     }
-    const insert = { styleId, styleLink };
+    const insert = { styleId, styleLink, put };
     return insert;
   })();
+
   const cp = {
     sleep,
     head,
     scripts,
     utils,
-    insert,
+    dom,
     events,
-    random,
+    put,
+    html,
   };
   return cp;
 })();
-
-
-
-// //@ts-check
-// import { assertNonNull, MyDocument, sleep, until } from "./utils.js";
-// import {compressor, decompress, distPlugins} from "./build-constants.js";
-
-
-// const plugins = Object.fromEntries(distPlugins.map(e => [e.key, e]));
-
-// export const scriptLoader = (()=>{
-
-//   let dist = './dist';
-//   for (const e of document.querySelectorAll('script')) {
-//     const m = e.src.match(/^(.*)\/caph-docs\.(?:min\.)?js$/)
-//     if (m) dist = m[1];
-//   }
-//   //console.log(dist);
-
-//   const div = document.getElementById('core-sources') || MyDocument.createElement('div', {
-//     id: 'core-sources',
-//     parent: document.head,
-//     where: 'beforeend',
-//   });
-
-
-//   const _randomSessionSuffix = ('' + Math.random()).slice(2);
-//   const parseKey = (/** @type {string} */ key)=>{
-//     // key is like either 'userComponent', './userFileComponent.js', '@caphPlugin', '@dist/caphPlugin', 'full URL'
-//     /** @type {string|null} */ 
-//     let url = key.replace(/^@dist\/(.*)$/, (_, p)=>`${dist}/${p}`);
-//     if(url.startsWith('./')) url += `?${_randomSessionSuffix}`;
-//     url = new URL(url, document.baseURI).href;
-//     if(!url.endsWith('.js') && !url.endsWith('.css')) url = null;
-//     /** @type {string|null} */
-//     let proxyKey = null;
-//     if(plugins[key]) ({dist:proxyKey} = plugins[key]);
-//     return {url, proxyKey};
-//   }
-
-//   /**
-//    * @param {string} ref 
-//    * @param {{
-//    * parent?: HTMLElement|null,
-//    * where?: 'beforebegin' | 'afterbegin' | 'beforeend' | 'afterend',
-//    * attrs?: {[key:string]:string},
-//    * autoAttrs?: boolean,
-//    * isCompressed?: boolean|null,
-//    * msTimeout?: number,
-//    * }} options
-//    */
-//   const load = (ref, { attrs={}, parent=null, where='beforeend', autoAttrs=true} = {})=>{
-//     let {url:_ref} = parseKey(ref); // especially for plugin loading libraries
-//     if(!_ref) return;
-//     ref = assertNonNull(_ref);
-//     const refBase = ref.split('#')[0].split('?')[0]
-//     if (parent == null) parent = div;
-//     const ext = refBase.split('.').pop();
-//     let tag = ext == 'js' ? 'script' : ext == 'css' ? 'link' : null;
-//     if (tag == null) throw new Error('Only .js and .css files can be _sources. Got: ' + ext + ' ' + ref);
-//     let /** @type {{[key:string]:string}}*/ defaults = {};
-//     if (autoAttrs && tag == 'link') defaults = { rel: 'stylesheet', type: 'text/css' };
-//     Object.keys(attrs).forEach(k => defaults[k] = attrs[k]);
-//     attrs = defaults;
-//     if (tag == 'script') attrs.src = ref;
-//     if (tag == 'link') attrs.href = ref;
-//     _load_elem(ref, tag, attrs, parent, where);
-//   }
-
-//   // const loadFont = async(/** @type {string}*/name)=>{
-//   //   return await load(`${dist}/font-${name}.css`);
-//   // }
-//   // async loadPlugin(name) {
-//   //   return await this.load(`${dist}/plugin-${name}.js`);
-//   // }
-
-//   const status = {};
-
-//   const _load_elem = (ref, tag, attrs, parent, where) => new Promise((_ok, _err) => {
-//     if (status[ref]) return _ok(null); 
-//     status[ref] = true;
-//     let e = document.createElement(tag);
-//     for(let key in attrs) e.setAttribute(key, attrs[key]);
-//     let done = false;
-//     e.onload = () => { if (!done) { done = true; _ok(null); } };
-//     e.onerror = (err) => { if (!done) { done = true; _err(err); } }; // HTTP errors only
-//     parent.insertAdjacentElement(where, e);
-//   });
-
-//   const injectStyle = (/** @type {string} */ styleStr)=>{
-//     MyDocument.createElement('style', { parent: div, where: 'beforeend', text: styleStr });
-//   }
-//   return {injectStyle, load, div, dist, parseKey};
-// })();
-
-// export const parseKey = scriptLoader.parseKey;
-// export const injectStyle = scriptLoader.injectStyle;
-// export const load = scriptLoader.load;
