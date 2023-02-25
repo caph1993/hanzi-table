@@ -489,8 +489,11 @@ const cp = (() => {
         length = first, styleTemplate = second;
       }
       let uid = id || utils.randAZ(length);
-      if (styleTemplate) cp.head.append(put('style', styleTemplate(uid)))
+      if (styleTemplate) style(styleTemplate(uid));
       return uid;
+    }
+    const style = (/** @type {string} */ cssText)=>{
+      cp.head.append(put('style', cssText))
     }
     const _styles = {};
     /** @param {string} path */
@@ -501,7 +504,7 @@ const cp = (() => {
       _styles[url] = true;
       put(head, 'link[href=$][rel=stylesheet]', url);
     }
-    const insert = { styleId, styleLink, put };
+    const insert = { styleId, styleLink, put , style};
     return insert;
   })();
 
