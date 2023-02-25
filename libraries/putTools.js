@@ -90,6 +90,11 @@ function putNodes(htmlTemplateString, ...variables){
 
   for(let {element, value} of replacements){
     let values = (Array.isArray(value)? value:[value]).map(v=>{
+      if(v instanceof Promise){
+        const tmpDiv = put('div');
+        v.then(value=>tmpDiv.replaceWith(...putNodes`${value}`));
+        return tmpDiv;
+      }
       if(v instanceof Node) return v;
       if(v instanceof RX) return putText(v);
       return putText(v);

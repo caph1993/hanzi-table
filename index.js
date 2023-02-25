@@ -3,19 +3,13 @@
 /// <reference path="./table.js" />
 
 
-function newUID(length, styleTemplate) {
-  const uid = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(length * 2)))).replace(/[+/]/g, "").substring(0, length);
-  if (styleTemplate) document.head.append(put('style', styleTemplate(uid)))
-  return uid;
-}
-
 const toggleClass = (e, className) => {
   const after = !e.classList.contains(className);
   put(e, `${after ? '.' : '!'}${className}`);
   return after;
 }
 
-const theTable = (() => {
+const theTable = (async () => {
 
   const listMeaning = [];
   const listHanzi = [];
@@ -31,27 +25,63 @@ const theTable = (() => {
   }
   const grades = [-1, 1, 2, 3, 4, 5, 6];
 
-  const hanziSet = {};
-  for (let d of THE_KANJI_JSON) {
-    hanziSet[d.hanzi] = true;
-  }
-  const trAll = THE_KANJI_JSON.map(d => {
+  const hanziBasic = (await cp.scripts.load('./hanzi.js')).map(
+    ([hanzi, pinyin, meaning])=>({hanzi, pinyin, meaning})
+  );
+  const hanziSet = new Set(hanziBasic);
+
+  const details = cp.sleep(5000)
+  .then(()=>cp.scripts.load('./hanzi-details.js')
+  .then(table=>{
+    const dict = {};
+    for(let [hanzi, num, grade, strokes, etymology] of table){
+      dict[hanzi] = { num, grade, strokes, etymology};
+    }
+    return dict;
+  }));
+
+  const trAll = hanziBasic.map(d => {
     let fold = true;
-    const button = put(`button.center $`, '+');
+    const button = put(`button.center[disabled] $`, '+');
     const tdPinyin = put('td.right $', `.${d.pinyin}.`);
     const tdHanzi = put('td.center $', d.hanzi);
-    const tdMeaning = put('td.left $', d.meaning);
+    const tdMeaning = put('td.left[style=$] $','max-width:33vw', d.meaning);
+    const tr = put(
+      `tr#${d.hanzi}`,
+      [put('td', button), tdPinyin, tdHanzi, tdMeaning],
+    );
+    const tdDetails = put('td.left[colspan=4]')
+    const trDetails = put('tr.hidden', tdDetails);
     listMeaning.push(tdMeaning);
     listHanzi.push(tdHanzi);
     listPinyin.push(tdPinyin);
+    button.onclick = () => {
+      fold = !fold;
+      put(trDetails, fold ? '.hidden' : '!hidden');
+      button.innerText = fold ? '+' : '-';
+    }
+    tdMeaning.onclick = () => toggleClass(tdMeaning, 'off');
+    tdHanzi.onclick = () => toggleClass(tdHanzi, 'off');
+    tdPinyin.onclick = () => toggleClass(tdPinyin, 'off');
+    details.then(det=>{
+      put(button, '[!disabled]');
+      put(tdDetails, makeDetails({...d, ...det[d.hanzi]}));
+      put(tr, '[grade=$]', d.grade);
+      put(tdDetails, '[grade=$]', d.grade);
+    })
+    return [tr, trDetails];
+  }).flat();
 
-    const tr = put(`tr#${d.hanzi}`, [put('td', button), tdPinyin, tdHanzi, tdMeaning])
-    const urlOf = (s) => `https://en.wiktionary.org/wiki/${encodeURIComponent(s)}`;
-    const addLinks = (text) => {
+  const makeDetails = (d) => {
+    const wiktionary = (s) => (
+     `https://en.wiktionary.org/wiki/${encodeURIComponent(s)}`
+    );
+    const addLinks = (/** @type {string} */ text) => {
+      // replace hanzi characters in text with links 
       const out = [];
       let i = 0, j = 0;
       while (j <= text.length) {
-        if (j < text.length && hanziSet[text[j]]) {
+        if (j < text.length && hanziSet.has(text[j])) {
           out.push(text.slice(i, j));
           out.push(put('a[href=$] $', `#${text[j]}`, text[j]));
           i = j + 1;
@@ -63,26 +93,15 @@ const theTable = (() => {
       }
       return out;
     }
-    const trDetailed = put('tr.hidden', put('td.left[colspan=4]', put('ul',
+    return put('ul',
       put('li $', `Character ${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
-      put('li', put('a[href=$] $', urlOf(d.pinyin), `Homophones of ${d.pinyin}`)),
-      put('li', put('a[href=$] $', urlOf(d.hanzi), `Definition of ${d.hanzi}`)),
+      put('li', put('a[href=$] $', wiktionary(d.pinyin), `Homophones of ${d.pinyin}`)),
+      put('li', put('a[href=$] $', wiktionary(d.hanzi), `Definition of ${d.hanzi}`)),
       put('li', putNodes`Origin: ${addLinks(d.etymology || '')}`),
-    )));
-    button.onclick = () => {
-      fold = !fold;
-      put(trDetailed, fold ? '.hidden' : '!hidden');
-      button.innerText = fold ? '+' : '-';
-    }
-    tdMeaning.onclick = () => toggleClass(tdMeaning, 'off');
-    tdHanzi.onclick = () => toggleClass(tdHanzi, 'off');
-    tdPinyin.onclick = () => toggleClass(tdPinyin, 'off');
-    put(tr, '[grade=$]', d.grade);
-    put(trDetailed, '[grade=$]', d.grade);
-    return [tr, trDetailed];
-  }).flat();
+    );
+  }
 
-  const tableId = newUID(20, (uid) => `
+  const tableId = cp.insert.styleId(uid => `
   #${uid} {
     margin: auto;
   }
@@ -121,6 +140,7 @@ const theTable = (() => {
     white-space: nowrap;
   }
   `);
+
   const table = put(`table#${tableId}`, [
     put('thead', put('tr', [
       //put('th $', ''),
@@ -168,7 +188,7 @@ const theTable = (() => {
     put('li $', 'Grade: ', buttons),
     put('li $', 'Font size: ', fontButtons),
   ])
-  return [fontStyle, more, put('br'), table];
+  return [fontStyle, more, put('br'), put('div[style=$]', 'width:100%', table)];
 })();
 
 const mainElement = putNodes`
@@ -186,13 +206,13 @@ Carlos Pinzón
 `;
 
 document.body.append(
-  put(`div.${newUID(20, (uid) => `
+  put(`div.${cp.insert.styleId((uid) => `
     .${uid}{
       padding-top: 1em;
       padding-bottom: calc(20vh + 5rem);
     }
     `)}`,
-    put(`div.${newUID(20, (uid) => `
+    put(`div.${cp.insert.styleId((uid) => `
       .${uid}{
         padding: 1% 2% 3% 2%; max-width: 45em; margin: auto;
       }
