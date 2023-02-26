@@ -497,7 +497,22 @@ const cp = (() => {
       }
       return value;
     }
-    const utils = { getUrl, sleep, assertDef, assertNonNull, nonNull, range, isString, rand32, randAZ, untilTimed };
+    /** @template T @param {T[]} arrA @param {any[]} arrB @returns {T[]}*/
+    const arrDiff = (arrA, arrB)=>{
+      const setB = new Set(arrB);
+      return [...new Set(arrA)].filter(x => !setB.has(x));
+    }
+    /** @template T @param {T[]} arr @returns {boolean}*/
+    const all = (arr)=>{
+      for(let x of arr) if (!x) return false;
+      return true;
+    }
+    /** @template T @param {T[]} arr @returns {boolean}*/
+    const any = (arr)=>{
+      for(let x of arr) if (x) return true;
+      return false;
+    }
+    const utils = { getUrl, sleep, assertDef, assertNonNull, nonNull, range, isString, rand32, randAZ, untilTimed, arrDiff, all, any };
     return utils;
   })();
 
@@ -588,8 +603,9 @@ const cp = (() => {
     put(e, `${after ? '.' : '!'}${className}`);
     return after;
   }
-
   const cp = {
+    sel: (args)=>document.querySelector(args),
+    all: (args)=>/**@type {HTMLElement[]}*/([...document.querySelectorAll(args)]),
     sleep,
     head,
     body,

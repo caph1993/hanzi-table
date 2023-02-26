@@ -1,33 +1,19 @@
 //@ts-check
 /// <reference path="./libraries/cpTools.js" />
 
-cp.scripts.define(async ()=>{
+cp.scripts.define(async () => {
   var put = cp.put;
 
   const readyBasic = new cp.events.Target(false);
 
   const theTable = (async () => {
-  
-    const listMeaning = [];
-    const listHanzi = [];
-    const listPinyin = [];
-    const addClickToggle = (td, list) => {
-      td.onclick = () => {
-        let isOff = true;
-        for (let e of list) isOff = isOff && e.classList.contains('off');
-        const setOff = !isOff;
-        for (let e of list) put(e, setOff ? '.off' : '!off');
-      }
-      return td;
-    }
-    const grades = [-1, 1, 2, 3, 4, 5, 6];
-  
+
     const hanziBasic = (await cp.scripts.load('./hanzi.js')).map(
       ([hanzi, pinyin, meaning]) => ({ hanzi, pinyin, meaning })
     );
     readyBasic.dispatch(true);
     const hanziSet = new Set(hanziBasic);
-  
+
     const details = cp.sleep(800)
       .then(() => cp.scripts.load('./hanzi-details.js')
         .then(table => {
@@ -37,23 +23,20 @@ cp.scripts.define(async ()=>{
           }
           return dict;
         }));
-  
+
     const trAll = hanziBasic.map(d => {
       let fold = true;
       const offToggle = el => el.onclick = () => cp.toggle(el, 'off');
       const button = put(`button.center[disabled] $`, '+');
-      const tdPinyin = put('td.right $ @', `.${d.pinyin}.`, offToggle);
-      const tdHanzi = put('td.center $ @', d.hanzi, offToggle);
-      const tdMeaning = put('td.left[style=$] $ @', 'max-width:40vw', d.meaning, offToggle);
+      const tdPinyin = put('td.pinyin $ @', `.${d.pinyin}.`, offToggle);
+      const tdHanzi = put('td.hanzi $ @', d.hanzi, offToggle);
+      const tdMeaning = put('td.meaning $ @', d.meaning, offToggle);
       const tr = put(
         `tr#${d.hanzi}`,
         [put('td', button), tdPinyin, tdHanzi, tdMeaning],
       );
       const tdDetails = put('td.left[colspan=4]')
       const trDetails = put('tr.hidden', tdDetails);
-      listMeaning.push(tdMeaning);
-      listHanzi.push(tdHanzi);
-      listPinyin.push(tdPinyin);
       button.onclick = () => {
         fold = !fold;
         put(trDetails, fold ? '.hidden' : '!hidden');
@@ -68,7 +51,7 @@ cp.scripts.define(async ()=>{
       })
       return [tr, trDetails];
     }).flat();
-  
+
     const makeDetails = (d) => {
       const wiktionary = (s) => (
         `https://en.wiktionary.org/wiki/${encodeURIComponent(s)}`
@@ -97,22 +80,39 @@ cp.scripts.define(async ()=>{
         put('li', cp.html`Origin: ${addLinks(d.etymology || '')}`),
       );
     }
-  
+
     const tableId = cp.styles.add(uid => `
     #${uid} {
       margin: auto;
+    }
+    #${uid} thead th.run-animation{
+      animation-name: fadeIn;
+      animation-duration: 0.1s;
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; }
+      20% { opacity: 0; }
+      40% { opacity: 0.3; }
+      60% { opacity: 0.5; }
+      80% { opacity: 0.9; }
+      100% { opacity: 1; }
     }
     #${uid} td.center,
     #${uid} th.center {
       text-align: center;
     }
-    #${uid} td.right,
-    #${uid} th.right {
+    #${uid} td.pinyin,
+    #${uid} th.pinyin {
       text-align: right;
     }
-    #${uid} td.left,
-    #${uid} th.left {
+    #${uid} td.hanzi,
+    #${uid} th.hanzi {
+      text-align: center;
+    }
+    #${uid} td.meaning,
+    #${uid} th.meaning {
       text-align: left;
+      max-width:40vw;
     }
     #${uid} td.off {
       opacity: 0;
@@ -137,18 +137,33 @@ cp.scripts.define(async ()=>{
       white-space: nowrap;
     }
     `);
-  
+
+    const grades = [-1, 1, 2, 3, 4, 5, 6];
+
+    /** @param {string} key @param {string} name */
+    const columnHeader = (key, name) => {
+      const th = put(`th.${key} $`, name);
+      th.onclick = () => {
+        put(th, ".run-animation");
+        setTimeout(() => put(th, "!run-animation"), 120);
+        const q = `#${tableId} tbody tr:not(.hiddenByGrade) td.${key}`;
+        const curr = cp.all(q);
+        const setOn = !!cp.sel(`${q}.off`);
+        for (let e of curr) cp.toggle(e, 'off', !setOn);
+      }
+      return th;
+    }
     const table = put(`table#${tableId}`, [
       put('thead', put('tr', [
         //put('th $', ''),
         put('th $', ''),
-        addClickToggle(put('th.right $', 'Pinyin'), listPinyin),
-        addClickToggle(put('th.center $', 'Hanzi'), listHanzi),
-        addClickToggle(put('th.left $', 'Meaning'), listMeaning),
+        columnHeader('pinyin', 'Pinyin'),
+        columnHeader('hanzi', 'Hanzi'),
+        columnHeader('meaning', 'Meaning'),
       ])),
       put('tbody', trAll),
     ]);
-  
+
     put(cp.head, 'style $', `
     button.controls.active {
       text-decoration: underline;
@@ -158,23 +173,30 @@ cp.scripts.define(async ()=>{
       margin-right: 0.1em;
     }`);
     const buttons = grades.map(lvl => {
-      const button = put('button.controls $', lvl < 0 ? 'All' : lvl);
+      const button = put('button.controls');
+      put(button, '$', lvl < 0 ? 'All' : lvl);
       if (lvl < 0) put(button, '.active');
       button.onclick = () => {
-        const tgt = trAll.map(e => [e, lvl < 0 || e.getAttribute('grade') == '' + lvl]);
-        for (let [e, show] of tgt) {
-          cp.toggle(e, 'hiddenByGrade', !show);
+        const q = `#${tableId} tbody tr`;
+        let tgtYes, tgtNo;
+        if (lvl < 0) {
+          tgtYes = cp.all(q);
+          tgtNo = [];
+        } else {
+          const curr = cp.all(`${q}:not(.hiddenByGrade)`);
+          tgtYes = cp.all(`${q}[grade="${lvl}"]`);
+          tgtNo = cp.utils.arrDiff(curr, tgtYes);
         }
-        for (let b of buttons) {
-          cp.toggle(b, 'active', b === button)
-        }
+        for (let e of tgtYes) cp.toggle(e, 'hiddenByGrade', false);
+        for (let e of tgtNo) cp.toggle(e, 'hiddenByGrade', true);
+        for (let b of buttons) cp.toggle(b, 'active', b === button)
       }
       return button;
     });
-  
+
     let fontSize = 1.3;
     let fontStyle = put('style $', `#${tableId} { font-size: ${fontSize}em }`);
-    const fontButtons = ['-', '+'].map(s => put('button.controls $ @', s, b=>{
+    const fontButtons = ['-', '+'].map(s => put('button.controls $ @', s, b => {
       b.onclick = () => {
         fontSize = fontSize * ((s == '+') ? 1.05 : 0.95);
         fontStyle.innerText = `#${tableId} { font-size: ${fontSize}em }`;
@@ -186,7 +208,7 @@ cp.scripts.define(async ()=>{
     ])
     return [fontStyle, more, put('br'), put('div[style=$]', 'width:100%', table)];
   })();
-  
+
   const main = cp.html`
 ${put('h1 $', 'Chinese Hanzi table')}
 
@@ -207,14 +229,14 @@ Carlos Pinzón
       padding-bottom: calc(20vh + 5rem);
     }
   `)}`,
-  put(`div.${cp.styles.add((uid) => `
+    put(`div.${cp.styles.add((uid) => `
     .${uid}{
       padding: 1% 2% 3% 2%; max-width: 45em; margin: auto;
     }
   `)}`,
-  main,
-  ));
-  
+      main,
+    ));
+
   cp.styles.add(`
     button{cursor: pointer;}
     html{
@@ -223,8 +245,8 @@ Carlos Pinzón
     }
   `);
   document.body.append(mainWrapper);
-  
-  (async ()=>{
+
+  (async () => {
     await readyBasic.untilTrue();
     cp.styles.add(`
       body {
