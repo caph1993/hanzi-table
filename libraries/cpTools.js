@@ -3,17 +3,130 @@
 
 
 const cp = (() => {
-  const put = (()=>{
+
+
+
+  const events = (() => {
+
+    /** @template T */
+    class Target extends EventTarget {
+      /** @type {T|undefined} */ value;
+
+      /** @param {T} [value]*/
+      constructor(value = undefined) {
+        super();
+        this.value = value;
+      }
+
+      /** @param {T} [value] */
+      dispatch(value = undefined) {
+        this.value = value;
+        this.dispatchEvent(new Event(''));
+      }
+      /**
+       * Similar to addEventListener, but if the event is fired many
+       * times while onEvent is running, it will wait and fire only
+       * the last call.
+       * @param {((value:T) => any)|(() => any)} onEvent
+       */
+      listen(onEvent) {
+        let awaiting = false;
+        let pendingCall;
+        const onEventLast = () => {
+          if (awaiting) return pendingCall = onEvent;
+          awaiting = true;
+          pendingCall = null;
+          sleep(0).then(() => // @ts-ignore
+            onEvent(this.value)
+              .finally(() => {
+                awaiting = false;
+                if (pendingCall) this.dispatchEvent(new Event(''));
+              })
+          );
+        }
+        this.addEventListener('', onEventLast);
+        return onEventLast;
+      }
+      /** Wait until the event is fired and callable() returns true
+       * @param {number} [timeout]
+       * @returns {Promise<T>}
+       */
+      untilTrue(timeout) {
+        return this.until(()=>this.value, timeout);
+      }
+
+      /** Wait until the event is fired and callable() returns true
+       * @template T2
+       * @param {(T)=>T2} callable
+       * @param {number} [timeout]
+       * @returns {Promise<NonNullable<T2>>}
+       */
+      until(callable, timeout) {
+        return new Promise((resolve, reject) => {
+          let out = callable(this.value);
+          if (out) return resolve(out);
+          const onLoad = () => {
+            out = callable(this.value);
+            if (!out) return;
+            this.removeEventListener('', onLoad);
+            resolve(out);
+          }
+          this.addEventListener('', onLoad);
+          if (timeout) setTimeout(() => {
+            this.removeEventListener('', onLoad);
+            reject('timeout');
+          }, timeout);
+        });
+      }
+    }
+
+    /**
+     * @template T
+     * @param {()=>T} callable
+     * @param {Node=} parent
+     * @returns {Promise<NonNullable<T>>}
+      }
+    */
+    function untilDom(callable, parent) {
+      // https://stackoverflow.com/a/61511955/3671939
+      const _parent = parent || document.body;
+      return new Promise(resolve => {
+        let out = callable();
+        if (out) return resolve(out);
+        const observer = new MutationObserver(() => {
+          const out = callable();
+          if (!out) return;
+          resolve(out);
+          observer.disconnect();
+        });
+        observer.observe(_parent, { childList: true, subtree: true });
+      });
+    }
+    // https://stackoverflow.com/a/61511955/3671939
+    /** @param {string} selector @param {Node=} parent*/
+    function untilQuery(selector, parent) {
+      const callable = () => document.querySelector(selector);
+      return untilDom(callable, parent);
+    }
+    const events = { Target, untilDom, untilQuery };
+    return events;
+  })();
+
+  const put = (() => {
+    //https://github.com/kriszyp/put-selector/blob/master/LICENSE
     let forDocument, fragmentFasterHeuristic = /[-+,> ]/;
-    let selectorParse = /(?:\s*([-+ ,<>]))?\s*(\.|!\.?|#)?([-\w\u00A0-\uFFFF%$|]+)?(?:\[([^\]=]+)=?('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|[^\]]*)\])?/g,
-      undefined, namespaceIndex, namespaces = /**@type {*}*/(false),
+    // let selectorParse = /(?:\s*([-+ ,<>]))?\s*(\.|!\.?|#)?([-\w\u00A0-\uFFFF%$|]+)?(?:\[([^\]=]+)=?('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|[^\]]*)\])?/g;
+    // @caph1993:
+    let selectorParse = /(?:\s*([-+ ,<>]))?\s*(\.|!\.?|#)?([-\w\u00A0-\uFFFF%$|@]+)?(?:\[([^\]=]+)=?('(?:\\.|[^'])*'|"(?:\\.|[^"])*"|[^\]]*)\])?/g;
+    let namespaceIndex, namespaces = /**@type {*}*/(false),
       doc = document,
       ieCreateElement = typeof doc.createElement == "object"; // telltale sign of the old IE behavior with createElement that does not support later addition of name 
     function insertTextNode(element, text) {
       element.appendChild(doc.createTextNode(text));
     }
     /** @type {(...args)=>HTMLElement}*/
-    function put(topReferenceElement) {
+    function put(_topReferenceElement) {
+      let topReferenceElement = /**@type {any}*/(_topReferenceElement);
       let fragment, lastSelectorArg, nextSibling, referenceElement, current,
         args = arguments,
         returnValue = args[0]; // use the first argument as the default return value in case only an element is passed in
@@ -107,6 +220,10 @@ const cp = (() => {
               if (tag == "$") {
                 // this is a variable to be replaced with a text node
                 insertTextNode(referenceElement, args[++i]);
+              } else if (tag == "@") {
+                // @caph1993: run function with this element
+                const callable = args[++i];
+                callable(referenceElement);
               } else {
                 // Need to create an element
                 tag = tag || put.defaultTag;
@@ -115,7 +232,7 @@ const cp = (() => {
                   // in IE, we have to use the crazy non-standard createElement to create input's that have a name 
                   tag = '<' + tag + ' name="' + ieInputName + '">';
                 }
-                // we swtich between creation methods based on namespace usage
+                // we switch between creation methods based on namespace usage
                 current = namespaces && ~(namespaceIndex = tag.indexOf('|')) ?
                   doc.createElementNS(namespaces[tag.slice(0, namespaceIndex)], tag.slice(namespaceIndex + 1)) :
                   doc.createElement(tag);
@@ -201,54 +318,101 @@ const cp = (() => {
     return put;
   })();
 
+
   const head = document.querySelector('#cpToolsHead') || put(document.head, 'div#cpToolsHead');
+
+  const body = document.querySelector('#cpToolsBody') || (() => {
+    const body = put('div#cpToolsHead');
+    events.untilQuery('body', document).then(() => (
+      put(document.body, body)
+    ));
+    return body;
+  })();
 
   const sleep = async (/** @type {number} */ ms) => (
     await new Promise(resolve => setTimeout(resolve, ms))
   );
 
-  const html = (()=>{
+  const html = (() => {
     const parsers = {
-      katex: [/(\$\$.*?\$\$|\$.*?\$)/gs, async m=>{
+      katex: [/(\$\$.*?\$\$|\$.*?\$)/gs, async m => {
         const displayMode = m.startsWith("$$");
-        const skip = displayMode?2:1;
+        const skip = displayMode ? 2 : 1;
         const formula = m.slice(skip, -skip);
         const e = put('div');
         const katex = await cp.load('katex');
-        katex.render(formula, e, {throwOnError: false, displayMode});
+        katex.render(formula, e, { throwOnError: false, displayMode });
         return e.firstChild;
       }],
-      code: [/\\\`\\\`\\\`(.*?)\\\`\\\`\\\`/gs, async m=>{
-        const code = m.slice(6,-6).trim().replace(/^.*?\n(.*)$/gs, '$1');
-        const options = {mode:'text/javascript'};
+      code: [/\\\`\\\`\\\`(.*?)\\\`\\\`\\\`/gs, async m => {
+        const code = m.slice(6, -6).trim().replace(/^.*?\n(.*)$/gs, '$1');
+        const options = { mode: 'text/javascript' };
         const putCodemirror = await cp.load('putCodemirror');
         return putCodemirror(code, options);
       }],
-      codeInline: [/\\\`(.*?)\\\`/g, m=>html`<code>${m[1]}</code>`]
+      codeInline: [/\\\`(.*?)\\\`/g, m => html`<code>${m[1]}</code>`]
     }
 
-    /** @typedef {string|number|boolean|Node|{[key:string]:any}} _T0 */
-    /** @typedef {_T0|Promise<_T0>} _T1 */
-    /** @typedef {_T1|_T1[]} _T2 */
-    /** 
+    /** @typedef {string|number|boolean|{[key:string]:any}} _T0 */
+    /** @typedef {_T0|Node} _T1 */
+    /** @typedef {_T1|Promise<_T1>} _T2 */
+    /** @typedef {_T2} _T3 */
+    /** @typedef {_T3|_T3[]} _T4 */
+
+    const parseText = (/** @type {_T0} */ v) => {
+      if (typeof v === 'string') return v;
+      if (v instanceof String) return v.toString();
+      if (Number.isFinite(v)) return `${v}`;
+      if (!v) '';
+      return JSON.stringify(v);
+    }
+
+    /** @param {string} text @returns {Text}*/
+    function putText(text) {
+      const elem = document.createTextNode('');
+      elem.textContent = text;
+      return elem;
+    }
+
+    const parseValue = (/** @type {_T3} */v) => {
+      if (v instanceof Promise) {
+        const tmpDiv = document.createElement('div');
+        tmpDiv.classList.add('cpTmp');
+        v.then(value => tmpDiv.replaceWith(...putHtml`${value}`));
+        return tmpDiv;
+      }
+      if (v instanceof Node) return v;
+      if (v instanceof events.Target) {
+        if (v.value instanceof Node) {
+
+        } else {
+          let elem = putText(parseText(v.value));
+          v.listen(text => elem.textContent = parseText(text));
+          return elem;
+        }
+      }
+      return putText(parseText(v));
+    }
+
+    /**  DOES NOT WORK for td nor th!!!
      * @param {TemplateStringsArray} htmlTemplateString
-     * @param {_T2[]} variables
+     * @param {_T4[]} variables
      * @returns {Node[]}
      * */
-    function parse(htmlTemplateString, ...variables){
+    function putHtml(htmlTemplateString, ...variables) {
       let wrapper = document.createElement('div');
-      let /** @type {readonly string[]}*/ htmlSeq = (htmlTemplateString.raw||htmlTemplateString);
+      let /** @type {readonly string[]}*/ htmlSeq = (htmlTemplateString.raw || htmlTemplateString);
       let varKey = 'placeholderForPutVariable';
       let html = htmlSeq.join(`<div ${varKey}></div>`)
       // Comments shift placeholder replacements
       html = html.replace(/<!--.*?-->/gs, '');
       const values = {};
       const valuesIdx = {};
-      for(let key of Object.keys(parsers)){
+      for (let key of Object.keys(parsers)) {
         const [reg, elemFactory] = parsers[key];
         values[key] = [];
         valuesIdx[key] = 0;
-        html = html.replace(reg, m=>{
+        html = html.replace(reg, m => {
           values[key].push(elemFactory(m));
           return `<div ${varKey}="${key}"></div>`
         });
@@ -258,128 +422,30 @@ const cp = (() => {
       values[''] = variables;
       valuesIdx[''] = 0;
       let replacements = [];
-      const dfs = (/** @type {Node}*/root)=>{
-        for(let child of root.childNodes){
+      const dfs = (/** @type {Node}*/root) => {
+        for (let child of root.childNodes) {
           const isPlaceholder = (
-            child.nodeName=="DIV"
+            child.nodeName == "DIV"
             && child instanceof HTMLElement
             && child.attributes[varKey]
           );
-          if(!isPlaceholder) dfs(child);
-          else{
+          if (!isPlaceholder) dfs(child);
+          else {
             const key = isPlaceholder.value;
             const value = values[key][valuesIdx[key]++];
-            replacements.push({element:child, value});
+            replacements.push({ element: child, value });
           }
         }
       }
       dfs(wrapper);
-
-      for(let {element, value} of replacements){
-        let values = (Array.isArray(value)? value:[value]).map(v=>{
-          if(v instanceof Promise){
-            const tmpDiv = document.createElement('div');
-            v.then(value=>tmpDiv.replaceWith(...parse`${value}`));
-            return tmpDiv;
-          }
-          if(v instanceof Node) return v;
-          return putText(v);
-        });
+      for (let { element, value } of replacements) {
+        let values = (Array.isArray(value) ? value : [value]).map(parseValue);
         element.replaceWith(.../**@type {*}*/(values));
       }
-      // DOES NOT WORK for td nor th!!!
       return [...wrapper.childNodes];
     }
 
-    /** 
-     * @param {_T1} text$
-     * @returns {Text}
-     * */
-    function putText(text$){
-      const parseText = (v)=>{
-        if (typeof v === 'string') return v;
-        if(v instanceof String) return v.toString();
-        if(Number.isFinite(v)) return `${v}`;
-        if(!v) '';
-        return JSON.stringify(v);
-      }
-      const elem = document.createTextNode('');
-      if(text$ instanceof events.EventTrigger){
-        text$.listen(async text => elem.textContent=parseText(text));
-      } else elem.textContent=parseText(text$);
-      return elem;
-    }
-    return parse;
-  })();
-
-
-  /** @template T
-   @param {number?} timeout
-   @param {(resolve: (value: T) => void, reject: (reason?: any) => void) => void} f
-  */
-  const timeoutPromise = (timeout, f) => (
-    new Promise((resolve, reject) => {
-      f(resolve, reject);
-      if (timeout) setTimeout(() => reject('timeout'), timeout);
-    })
-  );
-
-  async function untilTimed(/** @type {()=>any}*/ func, { ms = 200, timeout = 0 } = {}) {
-    if (timeout && ms > timeout) ms = timeout / 10;
-    let t0 = (new Date()).getTime();
-    let value;
-    while (!(value = await func())) {
-      if (timeout && (new Date()).getTime() - t0 > timeout)
-        throw 'timeout';
-      await sleep(ms);
-    }
-    return value;
-  }
-
-  const events = (() => {
-    class EventTrigger extends EventTarget {
-      /** @param {any?} value */
-      trigger(value = undefined) {
-        this.lastValue = value;
-        this.dispatchEvent(new Event(''));
-      }
-      /**
-       * if the event is fired many times while onEvent is running, it will wait and fire only the last call.
-       * @param {(value?) => Promise<any>} onEvent
-       */
-      listen(onEvent) {
-        let awaiting = false;
-        let pendingCall;
-        const onEventLast = () => {
-          if (awaiting) return pendingCall = onEvent;
-          awaiting = true;
-          pendingCall = null;
-          onEvent(this.lastValue).finally(() => {
-            awaiting = false;
-            if (pendingCall) this.dispatchEvent(new Event(''));
-          })
-        }
-        this.addEventListener('', onEventLast);
-        return onEventLast;
-      }
-
-      /** @template T  @param {()=>T} callable @returns {Promise<NonNullable<T>>}*/
-      until(callable, timeout = null) {
-        const out = callable();
-        if (out) return new Promise(resolve => resolve(out));
-        return timeoutPromise(timeout, resolve => {
-          const onLoad = () => {
-            const out = callable();
-            if (!out) return;
-            resolve(out);
-            this.removeEventListener('', onLoad);
-          }
-          this.addEventListener('', onLoad);
-        });
-      }
-    }
-    const events = { EventTrigger };
-    return events;
+    return putHtml;
   })();
 
   const utils = (() => {
@@ -390,27 +456,27 @@ const cp = (() => {
     /** @template T  @param {T} value @param {string} [valueName] @returns {T extends undefined ? never : T} */
     function assertDef(value, valueName) {
       if (value === undefined) {
-        throw new Error(`Encountered unexpected undefined value${valueName? ` for '${valueName}'` : ""}`);
+        throw new Error(`Encountered unexpected undefined value${valueName ? ` for '${valueName}'` : ""}`);
       }
       return /** @type {*} */ (value);
     }
     /** @template T @param {T} value @returns {T extends null ? never : T} */
     function assertNonNull(value) {
-      if (!value && (value===null||value === undefined)) throw new Error(`Encountered unexpected undefined value`);
+      if (!value && (value === null || value === undefined)) throw new Error(`Encountered unexpected undefined value`);
       return /** @type {*} */ (value);
     }
     /** @template T @param {T} value @returns {T extends null ? never : T} */
     function nonNull(value) { return /** @type {*} */ (value); }
     /** @type {(n: number) => number[]} */
     function range(n) {
-      return [...Array(n).fill(0)].map((x,i)=>i);
+      return [...Array(n).fill(0)].map((x, i) => i);
     }
     /** @type {(obj: any) => obj is String} */
     function isString(obj) {
       return Object.prototype.toString.call(obj) === "[object String]";
     }
-    function rand32(){
-      return Math.floor(Math.random()*(1<<32))
+    function rand32() {
+      return Math.floor(Math.random() * (1 << 32))
     }
     /** random string of letters only */
     const randAZ = (/** @type {number} */ length) => {
@@ -419,7 +485,19 @@ const cp = (() => {
       if (out.length < length) out += randAZ(length);
       return out.substring(0, length);
     }
-    const utils = { getUrl, sleep, assertDef, assertNonNull, nonNull, range, isString, rand32, randAZ };
+    /** @template T @param {()=>(T|Promise<T>)} func @returns {Promise<NonNullable<T>>} */
+    async function untilTimed(func, { ms = 200, timeout = 0 } = {}) {
+      if (timeout && ms > timeout) ms = timeout / 10;
+      let t0 = (new Date()).getTime();
+      let value;
+      while (!(value = await func())) {
+        if (timeout && (new Date()).getTime() - t0 > timeout)
+          throw 'timeout';
+        await sleep(ms);
+      }
+      return value;
+    }
+    const utils = { getUrl, sleep, assertDef, assertNonNull, nonNull, range, isString, rand32, randAZ, untilTimed };
     return utils;
   })();
 
@@ -437,7 +515,7 @@ const cp = (() => {
       if (!url.endsWith('.js')) throw 'only .js files can be loaded';
       return url;
     }
-    const _loaded = new events.EventTrigger();
+    const _loaded = new events.Target();
     const _declared = {};
     const _scriptPromises = {};
     /** @param {()=>(any|Promise<any>)} code */
@@ -447,7 +525,7 @@ const cp = (() => {
       const codePromise = (async () => await code());
       _scriptPromises[key] = _scriptPromises[key] || codePromise();
       const value = await _scriptPromises[key];
-      _loaded.trigger();
+      _loaded.dispatch();
       // console.log('Defined', key);
       return value;
     }
@@ -467,56 +545,61 @@ const cp = (() => {
     const scripts = { define, load, _scriptPromises, _loaded, head };
     return scripts;
   })();
-  // style injector:
 
-  const dom = (() => {
+  const styles = (() => {
     /** @typedef {(id: string) => string} StyleTemplate */
     /**
      * @type {{
-     * (length: number, styleTemplate:StyleTemplate?) : string;
-     * (id: string, styleTemplate:StyleTemplate) : string;
+     * (length: number, styleTemplate:StyleTemplate) : string;
      * (styleTemplate:StyleTemplate) : string;
+     * (textCss: string) : string;
     * }}
     */
     // @ts-ignore
-    const styleId = (first, second)=> {
-      let length=0, /**@type {string?}*/id=null, styleTemplate;
-      if(second===undefined){
-        length = 20, styleTemplate = first;
-      } else if(typeof first === 'string'){
-        id = first, styleTemplate = second, length=-1;
-      } else if(typeof first === 'number'){
-        length = first, styleTemplate = second;
+    const add = (first, second) => {
+      let uid, length = 20, styleTemplate=second, textCss='';
+      //@ts-ignore
+      if (utils.isString(first)) uid = '', textCss=first;
+      else {
+        if (typeof first === 'number') length = first;
+        else styleTemplate = first;
+        uid = utils.randAZ(length);
+        textCss = styleTemplate(uid);
       }
-      let uid = id || utils.randAZ(length);
-      if (styleTemplate) style(styleTemplate(uid));
+      put(head, 'style $', textCss);
       return uid;
-    }
-    const style = (/** @type {string} */ cssText)=>{
-      cp.head.append(put('style', cssText))
     }
     const _styles = {};
     /** @param {string} path */
-    function styleLink(path) {
+    function load(path) {
       const url = utils.getUrl(path);
       if (_styles[url]) return;
       if (!url.endsWith('.css')) throw 'only .css can be loaded';
       _styles[url] = true;
       put(head, 'link[href=$][rel=stylesheet]', url);
     }
-    const insert = { styleId, styleLink, put , style};
-    return insert;
+    const styles = { load, add };
+    return styles;
   })();
+
+  /** @param {HTMLElement} e @param {string} className @param {boolean?} value */
+  const toggle = (e, className, value = null) => {
+    const after = value !== null ? value : !e.classList.contains(className);
+    put(e, `${after ? '.' : '!'}${className}`);
+    return after;
+  }
 
   const cp = {
     sleep,
     head,
+    body,
     scripts,
     utils,
-    dom,
+    styles,
     events,
     put,
     html,
+    toggle,
   };
   return cp;
 })();
