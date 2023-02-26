@@ -221,6 +221,12 @@ const cp = (() => {
                 // @caph1993: run function with this element
                 const callable = args[++i];
                 callable(referenceElement);
+              } else if (tag.startsWith("@")) {
+                // @caph1993: add event listener
+                const callable = args[++i];
+                const key = tag.slice(1);
+                const handler = (e) => callable(referenceElement, e);
+                referenceElement.addEventListener(key, handler);
               } else {
                 // Need to create an element
                 tag = tag || put.defaultTag;
@@ -692,8 +698,8 @@ const cp = (() => {
       put(_popUpInner, content);
       put(elems.popUp, '!cpHidden');
     });
-    const vspace = (height)=>put('div[style=$]', `height: ${height}`);
-    const hspace = (width)=>put('div.cpInLine[style=$]', `width: ${width}`);
+    const vspace = (height) => put('div[style=$]', `height: ${height}`);
+    const hspace = (width) => put('div.cpInLine[style=$]', `width: ${width}`);
     const ui = { popUp, _popUpInner, vspace, hspace };
     return ui;
   })();

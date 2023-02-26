@@ -14,7 +14,7 @@ cp.scripts.define(async () => {
     const hanziSet = new Set(hanziBasic);
 
     const details = (async () => {
-      await cp.sleep(800);
+      await cp.sleep(250); // Just for interactivity
       let table = await cp.scripts.cacheLoad('./hanzi-details.js');
       const dict = {};
       for (let [hanzi, num, grade, strokes, etymology] of table) {
@@ -28,7 +28,7 @@ cp.scripts.define(async () => {
       const offToggle = key => (el) => {
         const offKey = `off.${d.hanzi}.${key}`;
         cp.toggle(el, '.off', !cp.ls.get(offKey, true));
-        el.onclick = () => cp.ls.set(offKey, !cp.toggle(el, 'off'));
+        put(el, '@click', () => cp.ls.set(offKey, !cp.toggle(el, 'off')));
       }
       const button = put(`button.center[disabled] $`, '+');
       const tdPinyin = put('td.pinyin $ @', `.${d.pinyin}.`, offToggle('pinyin'));
@@ -84,47 +84,51 @@ cp.scripts.define(async () => {
           input.oninput = () => cp.ls.set(key, input['value']);
           return input;
         })(),
-          '<', put('button $ @', 'Export/Import all comments', b => b.onclick = openPopUp))),
+          '<', put(
+            'button $ @click',
+            'Export/Import all comments',
+            ()=> openPopUp(),
+            ))),
       );
     }
 
-    const openPopUp = async ()=>{
+    const openPopUp = async () => {
       const keys = cp.ls.keys().filter(k => k.startsWith('comments.'));
-      const simplify = dict => Object.fromEntries(Object.entries(dict).map(([k,v]) => [k.slice(9), v]));
+      const simplify = dict => Object.fromEntries(Object.entries(dict).map(([k, v]) => [k.slice(9), v]));
       const dict = simplify(Object.fromEntries(keys.map(k => [k, cp.ls.get(k, '')])));
       const str = JSON.stringify(dict);
       await cp.ui.popUp(close => put('div', [
         put('h2 $', 'Export'),
         put('textarea[readonly="readonly"] $', str),
-        put('button $ @', 'Copy to clipboard', b => b.onclick = async () => {
+        put('button $ @click', 'Copy to clipboard', async (b) => {
           put(b, '[disabled]');
           await navigator.clipboard.writeText(str);
           put(b, '[!disabled]');
         }),
-        put('button $ @', 'Close', b => b.onclick = close),
+        put('button $ @click', 'Close', ()=> close()),
         ...(() => {
           const textarea = put('textarea[placeholder="Paste here to import comments"]');
           const out = [
             put('h2 $', 'Import'),
             textarea,
-            put('button $ @', 'Merge {...this, ...other}', b => b.onclick = () => {
+            put('button $ @click', 'Merge {...this, ...other}', () => {
               const other = JSON.parse(textarea['value']);
               const merged = { ...dict, ...other };
               for (let k in merged) cp.ls.set(`comments.${k}`, merged[k]);
               window.location.reload();
             }),
-            put('button $ @', 'Merge  {...other, ...this}', b => b.onclick = () => {
+            put('button $ @click', 'Merge  {...other, ...this}', () => {
               const other = JSON.parse(textarea['value']);
               const merged = { ...other, ...dict };
               for (let k in merged) cp.ls.set(`comments.${k}`, merged[k]);
               window.location.reload();
             }),
-            put('button $ @', 'Overwrite with {...other}', b => b.onclick = () => {
+            put('button $ @click', 'Overwrite with {...other}', () => {
               const other = JSON.parse(textarea['value']);
-              for (let k in {...dict, other}) cp.ls.set(`comments.${k}`, other[k]);
+              for (let k in { ...dict, other }) cp.ls.set(`comments.${k}`, other[k]);
               window.location.reload();
             }),
-            put('button $ @', 'Close', b => b.onclick = close),
+            put('button $ @click', 'Close', ()=>close()),
           ];
           return out;
         })(),
@@ -191,8 +195,7 @@ cp.scripts.define(async () => {
 
     /** @param {string} key @param {string} name */
     const columnHeader = (key, name) => {
-      const th = put(`th.${key} $`, name);
-      th.onclick = () => {
+      const th = put(`th.${key} $ @click`, name, (th) => {
         put(th, ".run-animation");
         setTimeout(() => put(th, "!run-animation"), 120);
         const q = `#${tableId} tbody tr:not(.hiddenByGrade) td.${key}`;
@@ -200,7 +203,7 @@ cp.scripts.define(async () => {
         const setOn = !!cp.sel(`${q}.off`);
         for (let e of curr) cp.toggle(e, 'off', !setOn);
         for (let e of curr) cp.ls.set(`off.${e.parentElement?.id}.${key}`, setOn);
-      }
+      });
       return th;
     }
     const table = put(`table#${tableId}`, [
@@ -251,11 +254,9 @@ cp.scripts.define(async () => {
     })();
     let fontSize = 1.3;
     let fontStyle = put('style $', `#${tableId} tr.basic { font-size: ${fontSize}em }`);
-    const fontButtons = ['-', '+'].map(s => put('button.controls $ @', s, b => {
-      b.onclick = () => {
-        fontSize = fontSize * ((s == '+') ? 1.05 : 0.95);
-        fontStyle.innerText = `#${tableId} tr.basic { font-size: ${fontSize}em }`;
-      }
+    const fontButtons = ['-', '+'].map(s => put('button.controls $ @click', s, () => {
+      fontSize = fontSize * ((s == '+') ? 1.05 : 0.95);
+      fontStyle.innerText = `#${tableId} tr.basic { font-size: ${fontSize}em }`;
     }));
     const more = put('ul', [
       put('li $', 'Grade: ', buttons),
