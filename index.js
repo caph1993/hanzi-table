@@ -7,22 +7,21 @@ cp.scripts.define(async () => {
   const readyBasic = new cp.events.Target(false);
 
   const theTable = (async () => {
-
-    const hanziBasic = (await cp.scripts.load('./hanzi.js')).map(
-      ([hanzi, pinyin, meaning]) => ({ hanzi, pinyin, meaning })
+    const hanziBasic = (await cp.scripts.cacheLoad('./hanzi.js')).map(
+      ([grade, hanzi, pinyin, meaning]) => ({ grade, hanzi, pinyin, meaning })
     );
     readyBasic.dispatch(true);
     const hanziSet = new Set(hanziBasic);
 
-    const details = cp.sleep(800)
-      .then(() => cp.scripts.load('./hanzi-details.js')
-        .then(table => {
-          const dict = {};
-          for (let [hanzi, num, grade, strokes, etymology] of table) {
-            dict[hanzi] = { num, grade, strokes, etymology };
-          }
-          return dict;
-        }));
+    const details = (async () => {
+      await cp.sleep(800);
+      let table = await cp.scripts.cacheLoad('./hanzi-details.js');
+      const dict = {};
+      for (let [hanzi, num, grade, strokes, etymology] of table) {
+        dict[hanzi] = { num, grade, strokes, etymology };
+      }
+      return dict;
+    })();
 
     const trAll = hanziBasic.map(d => {
       let fold = true;
@@ -32,22 +31,19 @@ cp.scripts.define(async () => {
       const tdHanzi = put('td.hanzi $ @', d.hanzi, offToggle);
       const tdMeaning = put('td.meaning $ @', d.meaning, offToggle);
       const tr = put(
-        `tr#${d.hanzi}`,
+        `tr#${d.hanzi}.basic.hiddenByGrade[grade=$]`, d.grade,
         [put('td', button), tdPinyin, tdHanzi, tdMeaning],
       );
       const tdDetails = put('td.left[colspan=4]')
-      const trDetails = put('tr.hidden', tdDetails);
+      const trDetails = put('tr.cpHidden.hiddenByGrade[grade=$]', d.grade, tdDetails);
       button.onclick = () => {
         fold = !fold;
-        put(trDetails, fold ? '.hidden' : '!hidden');
+        cp.toggle(trDetails, 'cpHidden', fold);
         button.innerText = fold ? '+' : '-';
       }
       details.then(det => {
-        const { grade } = det[d.hanzi];
         put(button, '[!disabled]');
         put(tdDetails, makeDetails({ ...d, ...det[d.hanzi] }));
-        put(tr, '[grade=$]', grade);
-        put(trDetails, '[grade=$]', grade);
       })
       return [tr, trDetails];
     }).flat();
@@ -57,7 +53,7 @@ cp.scripts.define(async () => {
         `https://en.wiktionary.org/wiki/${encodeURIComponent(s)}`
       );
       const addLinks = (/** @type {string} */ text) => {
-        // replace hanzi characters in text with links 
+        // replace hanzi characters in text with links
         const out = [];
         let i = 0, j = 0;
         while (j <= text.length) {
@@ -78,8 +74,30 @@ cp.scripts.define(async () => {
         put('li', put('a[href=$] $', wiktionary(d.pinyin), `Homophones of ${d.pinyin}`)),
         put('li', put('a[href=$] $', wiktionary(d.hanzi), `Definition of ${d.hanzi}`)),
         put('li', cp.html`Origin: ${addLinks(d.etymology || '')}`),
+        put('li', put('div $', 'Comments:', (() => {
+          const key = `comments.${d.hanzi}`;
+          const input = put('textarea.cpBlock $', cp.ls.get(key, ''));
+          input.oninput = () => cp.ls.set(key, input['value']);
+          return input;
+        })(),
+          '<', put('button $ @', 'Export all comments', b => b.onclick = async() => {
+            const keys = cp.ls.keys().filter(k => k.startsWith('comments.'));
+            const dict = Object.fromEntries(keys.map(k => [k.slice(9), cp.ls.get(k, '')]));
+            const str = JSON.stringify(dict);
+            await cp.ui.popUp(close=>put('div', [
+              put('textarea $', str),
+              put('button $ @', 'Copy to clipboard', b=>b.onclick = async () => {
+                put(b, '[disabled]');
+                await navigator.clipboard.writeText(str);
+                put(b, '[!disabled]');
+              }),
+              put('button $ @', 'Close', b=>b.onclick = close),
+            ]))
+          }))),
       );
     }
+
+    // "... @click ...", ()=>{this. ...}
 
     const tableId = cp.styles.add(uid => `
     #${uid} {
@@ -121,9 +139,6 @@ cp.scripts.define(async () => {
       min-width: 2em;
       margin-right: 0.5em;
     }
-    #${uid} .hidden{
-      display:none;
-    }
     #${uid} .hiddenByGrade{
       display:none;
     }
@@ -164,7 +179,7 @@ cp.scripts.define(async () => {
       put('tbody', trAll),
     ]);
 
-    put(cp.head, 'style $', `
+    cp.styles.add(`
     button.controls.active {
       text-decoration: underline;
       font-weight: bold;
@@ -174,8 +189,7 @@ cp.scripts.define(async () => {
     }`);
     const buttons = grades.map(lvl => {
       const button = put('button.controls');
-      put(button, '$', lvl < 0 ? 'All' : lvl);
-      if (lvl < 0) put(button, '.active');
+      put(button, '$', lvl < 0 ? 'All' : lvl);      
       button.onclick = () => {
         const q = `#${tableId} tbody tr`;
         let tgtYes, tgtNo;
@@ -189,17 +203,23 @@ cp.scripts.define(async () => {
         }
         for (let e of tgtYes) cp.toggle(e, 'hiddenByGrade', false);
         for (let e of tgtNo) cp.toggle(e, 'hiddenByGrade', true);
-        for (let b of buttons) cp.toggle(b, 'active', b === button)
+        for (let b of buttons) cp.toggle(b, 'active', b === button);
+        cp.ls.set('controls.grade', lvl);
       }
       return button;
     });
-
+    (async()=>{
+      await cp.events.untilQuery(`#${tableId}`);      
+      const theGrade = cp.ls.get('controls.grade', -1);
+      const button = buttons[grades.findIndex(lvl => lvl === theGrade)||0];
+      button.click();
+    })();
     let fontSize = 1.3;
-    let fontStyle = put('style $', `#${tableId} { font-size: ${fontSize}em }`);
+    let fontStyle = put('style $', `#${tableId} tr.basic { font-size: ${fontSize}em }`);
     const fontButtons = ['-', '+'].map(s => put('button.controls $ @', s, b => {
       b.onclick = () => {
         fontSize = fontSize * ((s == '+') ? 1.05 : 0.95);
-        fontStyle.innerText = `#${tableId} { font-size: ${fontSize}em }`;
+        fontStyle.innerText = `#${tableId} tr.basic { font-size: ${fontSize}em }`;
       }
     }));
     const more = put('ul', [
@@ -210,7 +230,7 @@ cp.scripts.define(async () => {
   })();
 
   const main = cp.html`
-${put('h1 $', 'Chinese Hanzi table')}
+${put('h1 $', 'Chinese table')}
 
 The following table contains the 1006 most popular Chinese characters according to Japanese government.
 It was taken from Wikipedia's article ${put('a[href=$] $', 'https://en.wikipedia.org/wiki/Ky%C5%8Diku_kanji', 'Kyōiku kanji')}.
@@ -219,7 +239,7 @@ It was augmented with chinese pinyin and glyph origins, and tuned for presentati
 For learning, you may click on the table header to hide the columns, and then click on a word to reveal it.
 
 ${theTable}
-
+${cp.ui.vspace('1em')}
 Carlos Pinzón
   `;
 

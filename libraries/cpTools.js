@@ -3,9 +3,6 @@
 
 
 const cp = (() => {
-
-
-
   const events = (() => {
 
     /** @template T */
@@ -52,7 +49,7 @@ const cp = (() => {
        * @returns {Promise<T>}
        */
       untilTrue(timeout) {
-        return this.until(()=>this.value, timeout);
+        return this.until(() => this.value, timeout);
       }
 
       /** Wait until the event is fired and callable() returns true
@@ -318,15 +315,15 @@ const cp = (() => {
     return put;
   })();
 
-
-  const head = document.querySelector('#cpToolsHead') || put(document.head, 'div#cpToolsHead');
-
-  const body = document.querySelector('#cpToolsBody') || (() => {
-    const body = put('div#cpToolsHead');
-    events.untilQuery('body', document).then(() => (
-      put(document.body, body)
-    ));
-    return body;
+  const elems = (() => {
+    const head = put(document.head, 'div#cpTools-head');
+    const body = put('div#cpTools-body');
+    const popUp = put('div#cpTools-popUp.cpHidden');
+    events.untilQuery('body', document).then(() => {
+      put(document.body, popUp);
+      put(document.body, body);
+    });
+    return { head, body, popUp };
   })();
 
   const sleep = async (/** @type {number} */ ms) => (
@@ -498,18 +495,18 @@ const cp = (() => {
       return value;
     }
     /** @template T @param {T[]} arrA @param {any[]} arrB @returns {T[]}*/
-    const arrDiff = (arrA, arrB)=>{
+    const arrDiff = (arrA, arrB) => {
       const setB = new Set(arrB);
       return [...new Set(arrA)].filter(x => !setB.has(x));
     }
     /** @template T @param {T[]} arr @returns {boolean}*/
-    const all = (arr)=>{
-      for(let x of arr) if (!x) return false;
+    const all = (arr) => {
+      for (let x of arr) if (!x) return false;
       return true;
     }
     /** @template T @param {T[]} arr @returns {boolean}*/
-    const any = (arr)=>{
-      for(let x of arr) if (x) return true;
+    const any = (arr) => {
+      for (let x of arr) if (x) return true;
       return false;
     }
     const utils = { getUrl, sleep, assertDef, assertNonNull, nonNull, range, isString, rand32, randAZ, untilTimed, arrDiff, all, any };
@@ -549,7 +546,7 @@ const cp = (() => {
       // console.log('Loading', key);
       if (!_declared[key]) {
         _declared[key] = true;
-        const script = put(head, 'script[src=$]', key);
+        const script = put(elems.head, 'script[src=$]', key);
         if (!script) throw '';
         // console.log('Injected', script);
       }
@@ -557,7 +554,25 @@ const cp = (() => {
       // console.log('Loaded', key);
       return await value;
     }
-    const scripts = { define, load, _scriptPromises, _loaded, head };
+    /**
+     * Loads from localStorage cache and pulls data
+     * for next page reload. The module must be a JSON constant
+     * @template T
+     * @param {string} path
+     * @param {(obj:any)=>(T|Promise<T>)} [beforeSave] data parser to compress the data
+     */
+    const cacheLoad = async (/** @type {string} */ path, beforeSave) => {
+      const key = getScriptUrl(path);
+      const cached = ls.get(key);
+      // for next page load
+      const fresh = (async () => {
+        let data = await load(key);
+        if (beforeSave) data = await beforeSave(data);
+        return ls.set(key, data);
+      })();
+      return cached || await fresh;
+    }
+    const scripts = { define, load, _scriptPromises, _loaded, cacheLoad };
     return scripts;
   })();
 
@@ -572,16 +587,16 @@ const cp = (() => {
     */
     // @ts-ignore
     const add = (first, second) => {
-      let uid, length = 20, styleTemplate=second, textCss='';
+      let uid, length = 20, styleTemplate = second, textCss = '';
       //@ts-ignore
-      if (utils.isString(first)) uid = '', textCss=first;
+      if (utils.isString(first)) uid = '', textCss = first;
       else {
         if (typeof first === 'number') length = first;
         else styleTemplate = first;
         uid = utils.randAZ(length);
         textCss = styleTemplate(uid);
       }
-      put(head, 'style $', textCss);
+      put(elems.head, 'style $', textCss);
       return uid;
     }
     const _styles = {};
@@ -591,7 +606,7 @@ const cp = (() => {
       if (_styles[url]) return;
       if (!url.endsWith('.css')) throw 'only .css can be loaded';
       _styles[url] = true;
-      put(head, 'link[href=$][rel=stylesheet]', url);
+      put(elems.head, 'link[href=$][rel=stylesheet]', url);
     }
     const styles = { load, add };
     return styles;
@@ -603,12 +618,92 @@ const cp = (() => {
     put(e, `${after ? '.' : '!'}${className}`);
     return after;
   }
+  const ls = (() => {
+    /** @template T @param {T} [_default] @returns {T} */
+    const get = (/** @type {string} */key, _default) => {
+      const str = localStorage.getItem(key);
+      let value = _default;
+      if (str) {
+        try { value = JSON.parse(str); }
+        catch (e) { console.error(e); }
+      }
+      // @ts-ignore
+      return value;
+    }
+    const clear = () => localStorage.clear();
+    const pop = (/** @type {string} */key) => {
+      const value = get(key);
+      localStorage.removeItem(key);
+      return value;
+    }
+    const set = (/** @type {string} */key, value) => {
+      if (value === undefined) return pop(key);
+      const str = JSON.stringify(value);
+      localStorage.setItem(key, str);
+      return value;
+    }
+    const keys = () => Object.keys(localStorage);
+    return { set, get, pop, clear, keys };
+  })();
+
+  const ui = (() => {
+    styles.add(`
+    .cpTools-popUpOuter{
+      /* background: var(--background-empty); */
+      backdrop-filter: blur(4px);
+      padding: 3vh 0em;
+    }
+    .cpTools-popUpInner{
+      max-width: calc(80vw - 2em);
+      max-height: calc(90vh - 5.5em);
+      overflow-y: auto;
+      color: black;
+      background: white;
+      margin:auto;
+      padding: 1.5em 2em 4em 2em;
+      border-radius: 1em;
+    }    
+    .cpTools-box-shadow{
+      box-shadow: 0px 0px 0.3rem 0.05rem;
+    }
+    .cpTools-box-shadow:hover{
+      box-shadow: 0px 0px 0.3rem 0.2rem;
+    }
+    .cpTools-fullscreen-layer{
+      width: 100%;
+      height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 100;
+    }`);
+    put(elems.popUp, '.cpTools-popUpOuter.cpTools-fullscreen-layer');
+    const _popUpInner = put(elems.popUp, 'div.cpTools-popUpInner.cpTools-box-shadow');
+    _popUpInner.onclick = (e) => e.stopPropagation();
+    /** @param {(()=>HTMLElement)|((out:any)=>HTMLElement)} mkContent */
+    const popUp = (mkContent) => new Promise(resolve => {
+      const _close = (out) => {
+        put(elems.popUp, '.cpHidden');
+        _popUpInner.removeChild(content);
+        resolve(out);
+      }
+      elems.popUp.onclick = (e) => (e.stopPropagation(), _close(null));
+      const content = mkContent(_close);
+      put(_popUpInner, content);
+      put(elems.popUp, '!cpHidden');
+    });
+    const vspace = (height)=>put('div[style=$]', `height: ${height}`);
+    const hspace = (width)=>put('div.cpInLine[style=$]', `width: ${width}`);
+    const ui = { popUp, _popUpInner, vspace, hspace };
+    return ui;
+  })();
   const cp = {
-    sel: (args)=>document.querySelector(args),
-    all: (args)=>/**@type {HTMLElement[]}*/([...document.querySelectorAll(args)]),
+    sel: (args) => document.querySelector(args),
+    all: (args) =>/**@type {HTMLElement[]}*/([...document.querySelectorAll(args)]),
     sleep,
-    head,
-    body,
+    ls,
+    ui,
+    elems,
     scripts,
     utils,
     styles,
@@ -619,3 +714,33 @@ const cp = (() => {
   };
   return cp;
 })();
+
+cp.styles.add(`
+.cpHidden{ display: none; }
+.cpLeft{ text-align: left; }
+.cpCenter{ text-align: center; }
+.cpRight{ text-align: right; }
+.cpBold{ font-weight: bold; }
+.cpHBox{ display: flex; flex-direction: row; }
+.cpVBox{ display: flex; flex-direction: column; }
+.cpInline{ display: inline; }
+.cpBlock{ display: block; }
+.cpCode {
+  padding: 0em 0.2em;
+  background-color: #e8e9ea;
+  color: #000;
+  border: 1px solid #caccd0;
+  border-radius: 2px;
+}
+span.cpKaTex.display.formula{
+  text-align: center;
+}
+span.cpKaTex{
+  font-size: 1em;
+}
+.cpKaTexDisplayParent{
+  width:100%;
+  text-align:center;
+  overflow-x: scroll;
+}
+`);
