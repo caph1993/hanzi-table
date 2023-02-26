@@ -25,11 +25,15 @@ cp.scripts.define(async () => {
 
     const trAll = hanziBasic.map(d => {
       let fold = true;
-      const offToggle = el => el.onclick = () => cp.toggle(el, 'off');
+      const offToggle = key=>(el)=>{
+        const offKey = `off.${d.hanzi}.${key}`;
+        cp.toggle(el, '.off', !cp.ls.get(offKey, true));
+        el.onclick = () => cp.ls.set(offKey, !cp.toggle(el, 'off'));
+      }
       const button = put(`button.center[disabled] $`, '+');
-      const tdPinyin = put('td.pinyin $ @', `.${d.pinyin}.`, offToggle);
-      const tdHanzi = put('td.hanzi $ @', d.hanzi, offToggle);
-      const tdMeaning = put('td.meaning $ @', d.meaning, offToggle);
+      const tdPinyin = put('td.pinyin $ @', `.${d.pinyin}.`, offToggle('pinyin'));
+      const tdHanzi = put('td.hanzi $ @', d.hanzi, offToggle('hanzi'));
+      const tdMeaning = put('td.meaning $ @', d.meaning, offToggle('meaning'));
       const tr = put(
         `tr#${d.hanzi}.basic.hiddenByGrade[grade=$]`, d.grade,
         [put('td', button), tdPinyin, tdHanzi, tdMeaning],
@@ -165,6 +169,7 @@ cp.scripts.define(async () => {
         const curr = cp.all(q);
         const setOn = !!cp.sel(`${q}.off`);
         for (let e of curr) cp.toggle(e, 'off', !setOn);
+        for (let e of curr) cp.ls.set(`off.${e.parentElement?.id}.${key}`, setOn);
       }
       return th;
     }
@@ -240,7 +245,7 @@ For learning, you may click on the table header to hide the columns, and then cl
 
 ${theTable}
 ${cp.ui.vspace('1em')}
-Carlos Pinzón
+Carlos Pinzón. 2023.
   `;
 
   const mainWrapper = put(`div.${cp.styles.add((uid) => `
