@@ -226,9 +226,7 @@ cp.scripts.define(async () => {
       margin-right: 0.1em;
     }`);
     const buttons = grades.map(lvl => {
-      const button = put('button.controls');
-      put(button, '$', lvl < 0 ? 'All' : lvl);
-      button.onclick = () => {
+      return put('button.controls $ @click', lvl < 0 ? 'All' : lvl, (button) => {
         const q = `#${tableId} tbody tr`;
         let tgtYes, tgtNo;
         if (lvl < 0) {
@@ -243,8 +241,7 @@ cp.scripts.define(async () => {
         for (let e of tgtNo) cp.toggle(e, 'hiddenByGrade', true);
         for (let b of buttons) cp.toggle(b, 'active', b === button);
         cp.ls.set('controls.grade', lvl);
-      }
-      return button;
+      });
     });
     (async () => {
       await cp.events.untilQuery(`#${tableId}`);
