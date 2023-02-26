@@ -25,7 +25,7 @@ cp.scripts.define(async () => {
 
     const trAll = hanziBasic.map(d => {
       let fold = true;
-      const offToggle = key=>(el)=>{
+      const offToggle = key => (el) => {
         const offKey = `off.${d.hanzi}.${key}`;
         cp.toggle(el, '.off', !cp.ls.get(offKey, true));
         el.onclick = () => cp.ls.set(offKey, !cp.toggle(el, 'off'));
@@ -84,21 +84,51 @@ cp.scripts.define(async () => {
           input.oninput = () => cp.ls.set(key, input['value']);
           return input;
         })(),
-          '<', put('button $ @', 'Export all comments', b => b.onclick = async() => {
-            const keys = cp.ls.keys().filter(k => k.startsWith('comments.'));
-            const dict = Object.fromEntries(keys.map(k => [k.slice(9), cp.ls.get(k, '')]));
-            const str = JSON.stringify(dict);
-            await cp.ui.popUp(close=>put('div', [
-              put('textarea $', str),
-              put('button $ @', 'Copy to clipboard', b=>b.onclick = async () => {
-                put(b, '[disabled]');
-                await navigator.clipboard.writeText(str);
-                put(b, '[!disabled]');
-              }),
-              put('button $ @', 'Close', b=>b.onclick = close),
-            ]))
-          }))),
+          '<', put('button $ @', 'Export/Import all comments', b => b.onclick = openPopUp))),
       );
+    }
+
+    const openPopUp = async ()=>{
+      const keys = cp.ls.keys().filter(k => k.startsWith('comments.'));
+      const simplify = dict => Object.fromEntries(Object.entries(dict).map(([k,v]) => [k.slice(9), v]));
+      const dict = simplify(Object.fromEntries(keys.map(k => [k, cp.ls.get(k, '')])));
+      const str = JSON.stringify(dict);
+      await cp.ui.popUp(close => put('div', [
+        put('h2 $', 'Export'),
+        put('textarea[readonly="readonly"] $', str),
+        put('button $ @', 'Copy to clipboard', b => b.onclick = async () => {
+          put(b, '[disabled]');
+          await navigator.clipboard.writeText(str);
+          put(b, '[!disabled]');
+        }),
+        put('button $ @', 'Close', b => b.onclick = close),
+        ...(() => {
+          const textarea = put('textarea[placeholder="Paste here to import comments"]');
+          const out = [
+            put('h2 $', 'Import'),
+            textarea,
+            put('button $ @', 'Merge {...this, ...other}', b => b.onclick = () => {
+              const other = JSON.parse(textarea['value']);
+              const merged = { ...dict, ...other };
+              for (let k in merged) cp.ls.set(`comments.${k}`, merged[k]);
+              window.location.reload();
+            }),
+            put('button $ @', 'Merge  {...other, ...this}', b => b.onclick = () => {
+              const other = JSON.parse(textarea['value']);
+              const merged = { ...other, ...dict };
+              for (let k in merged) cp.ls.set(`comments.${k}`, merged[k]);
+              window.location.reload();
+            }),
+            put('button $ @', 'Overwrite with {...other}', b => b.onclick = () => {
+              const other = JSON.parse(textarea['value']);
+              for (let k in {...dict, other}) cp.ls.set(`comments.${k}`, other[k]);
+              window.location.reload();
+            }),
+            put('button $ @', 'Close', b => b.onclick = close),
+          ];
+          return out;
+        })(),
+      ]));
     }
 
     // "... @click ...", ()=>{this. ...}
@@ -194,7 +224,7 @@ cp.scripts.define(async () => {
     }`);
     const buttons = grades.map(lvl => {
       const button = put('button.controls');
-      put(button, '$', lvl < 0 ? 'All' : lvl);      
+      put(button, '$', lvl < 0 ? 'All' : lvl);
       button.onclick = () => {
         const q = `#${tableId} tbody tr`;
         let tgtYes, tgtNo;
@@ -213,10 +243,10 @@ cp.scripts.define(async () => {
       }
       return button;
     });
-    (async()=>{
-      await cp.events.untilQuery(`#${tableId}`);      
+    (async () => {
+      await cp.events.untilQuery(`#${tableId}`);
       const theGrade = cp.ls.get('controls.grade', -1);
-      const button = buttons[grades.findIndex(lvl => lvl === theGrade)||0];
+      const button = buttons[grades.findIndex(lvl => lvl === theGrade) || 0];
       button.click();
     })();
     let fontSize = 1.3;
