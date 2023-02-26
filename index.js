@@ -309,6 +309,7 @@ Carlos Pinzón. 2023.
         margin: 0;
       }
     `);
-    cp.styles.load('./fonts/font-lmroman.css');
+    //cp.styles.load('./fonts/font-lmroman.css');
+    cp.styles.add(await cp.scripts.cacheLoad('./fonts/font-lmroman.js'));
   })();
 })
