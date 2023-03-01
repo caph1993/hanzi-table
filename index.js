@@ -36,7 +36,7 @@ cp.scripts.define(async () => {
       const tdMeaning = put('td.meaning $ @', d.meaning, offToggle('meaning'));
       const tr = put(
         `tr#${d.hanzi}.basic.hiddenByGrade[grade=$]`, d.grade,
-        [put('td', button), tdPinyin, tdHanzi, tdMeaning],
+        [tdPinyin, tdHanzi, tdMeaning, put('td', button)],
       );
       const tdDetails = put('td.left[colspan=4]')
       const trDetails = put('tr.cpHidden.hiddenByGrade[grade=$]', d.grade, tdDetails);
@@ -73,23 +73,44 @@ cp.scripts.define(async () => {
         }
         return out;
       }
-      return put('ul',
+      const ul = put('ul',
         put('li $', `Character ${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
-        put('li', put('a[href=$] $', wiktionary(d.pinyin), `Homophones of ${d.pinyin}`)),
-        put('li', put('a[href=$] $', wiktionary(d.hanzi), `Definition of ${d.hanzi}`)),
+        put('li', put('a[href=$][target=$] $', '_blank', wiktionary(d.pinyin), `Homophones of ${d.pinyin}`)),
+        put('li', put('a[href=$][target=$] $', '_blank', wiktionary(d.hanzi), `Definition of ${d.hanzi}`)),
         put('li', cp.html`Origin: ${addLinks(d.etymology || '')}`),
-        put('li', put('div $', 'Comments:', (() => {
-          const key = `comments.${d.hanzi}`;
-          const input = put('textarea.cpBlock $', cp.ls.get(key, ''));
-          input.oninput = () => cp.ls.set(key, input['value']);
-          return input;
-        })(),
-          '<', put(
-            'button $ @click',
-            'Export/Import all comments',
-            ()=> openPopUp(),
-            ))),
+        put('li', put('div $', 'Comments:', )),
       );
+      const comments = (() => {
+        const minHeight = 50;
+        const key = `comments.${d.hanzi}`;
+        const input = put('textarea.cpBlock.comments $', cp.ls.get(key, ''));
+        put(input, '[style=$]', `height:${Math.max(input.scrollHeight, minHeight)}px;overflow-y:hidden;`);
+        put(input, '@input', (el, ev)=>{
+          cp.ls.set(key, input['value']);
+          el.style.height = 0;
+          el.style.height = Math.max(el.scrollHeight, minHeight) + "px";
+        })
+        return input;
+      })();
+      return put('div', [
+        put('span $', 'Comments:'),
+        comments,
+        put('div.width100.flexRight', [
+          put(`input[type=$][value=$][autofocus][readonly][style=$] @focus`, 'text', d.hanzi, 'width:1.2em;', (el)=>el.select(), ),
+          put('div[style=$]', 'margin-left:0.7em'),
+          put('button $ @click', 'Copy', async (b) => {
+            put(b, '[disabled]');
+            await navigator.clipboard.writeText(d.hanzi);
+            put(b, '[!disabled]');
+          }),
+        ]),
+        ul,
+        put(
+          'button $ @click',
+          'Export/Import all comments',
+          ()=> openPopUp(),
+        ),
+      ]) 
     }
 
     const openPopUp = async () => {
@@ -189,6 +210,17 @@ cp.scripts.define(async () => {
       overflow: hidden;
       white-space: nowrap;
     }
+    #${uid} textarea.comments{
+      width:100%;
+    }
+    .width100{
+      width:100%;
+    }
+    .flexRight{
+      display: flex;
+      flex-direction: row;
+      justify-content: flex-end
+    }
     `);
 
     const grades = [-1, 1, 2, 3, 4, 5, 6];
@@ -208,11 +240,10 @@ cp.scripts.define(async () => {
     }
     const table = put(`table#${tableId}`, [
       put('thead', put('tr', [
-        //put('th $', ''),
-        put('th $', ''),
         columnHeader('pinyin', 'Pinyin'),
         columnHeader('hanzi', 'Hanzi'),
         columnHeader('meaning', 'Meaning'),
+        put('th $', ''),
       ])),
       put('tbody', trAll),
     ]);
