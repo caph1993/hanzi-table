@@ -75,10 +75,9 @@ cp.scripts.define(async () => {
       }
       const ul = put('ul',
         put('li $', `Character ${d.num}. Grade ${d.grade}. ${d.strokes} stroke${d.strokes != 1 ? 's' : ''}.`),
-        put('li', put('a[href=$][target=$] $', '_blank', wiktionary(d.pinyin), `Homophones of ${d.pinyin}`)),
-        put('li', put('a[href=$][target=$] $', '_blank', wiktionary(d.hanzi), `Definition of ${d.hanzi}`)),
+        put('li', put('a[target=$][href=$] $', '_blank', wiktionary(d.pinyin), `Homophones of ${d.pinyin}`)),
+        put('li', put('a[target=$][href=$] $', '_blank', wiktionary(d.hanzi), `Definition of ${d.hanzi}`)),
         put('li', cp.html`Origin: ${addLinks(d.etymology || '')}`),
-        put('li', put('div $', 'Comments:', )),
       );
       const comments = (() => {
         const minHeight = 50;
